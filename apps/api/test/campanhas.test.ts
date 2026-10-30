@@ -1,0 +1,82 @@
+// Campanhas e logo por loja.
+import { describe, it, expect, beforeAll } from 'vitest';
+import { req, enviar, montarCenario, PNG_1x1 } from './util';
+
+let S: Awaited<ReturnType<typeof montarCenario>>;
+let camp: string;
+beforeAll(async () => { S = await montarCenario(); });
+
+const itens = [
+  { nome: 'Arroz 5kg', descricao: 'Tipo 1', preco: '24,90', fator: 'UN' },
+  { nome: 'Feijão 1kg', preco: '7,49', fator: 'UN', campo_inventado: 'x' },
+];
+
+describe('campanhas', () => {
+  it('cria com tema padrão e lista', async () => {
+    const r = await req('POST', '/campanhas', { nome: 'Ofertas da semana' }, S.A);
+    expect(r.status).toBe(201); camp = r.json.id;
+    const l = await req('GET', '/campanhas', undefined, S.A);
+    expect(l.json.campanhas[0]).toMatchObject({ nome: 'Ofertas da semana', itens: 0, tema: { grade: '9', estilo: 'etiqueta_vermelha' } });
+  });
+  it('salva tema e itens de uma vez, e lê de volta na ordem', async () => {
+    const r = await req('PUT', '/campanhas/' + camp, { tema: { grade: '4', estilo: 'sem_caixa', politica: 'medio' }, itens }, S.A);
+    expect(r.status).toBe(200);
+    const g = await req('GET', '/campanhas/' + camp, undefined, S.A);
+    expect(g.json.campanha.tema).toMatchObject({ grade: '4', estilo: 'sem_caixa', politica: 'medio' });
+    expect(g.json.campanha.itens.map((i: any) => i.nome)).toEqual(['Arroz 5kg', 'Feijão 1kg']);
+    expect(g.json.campanha.itens[1]).not.toHaveProperty('campo_inventado');
+  });
+  it('recusa grade e estilo que não existem', async () => {
+    expect((await req('PUT', '/campanhas/' + camp, { tema: { grade: '7' } }, S.A)).status).toBe(400);
+    expect((await req('PUT', '/campanhas/' + camp, { tema: { estilo: 'qualquer' } }, S.A)).status).toBe(400);
+  });
+  it('autosave antigo não sobrescreve versão mais nova', async () => {
+    const g = await req('GET', '/campanhas/' + camp, undefined, S.A);
+    const v = g.json.campanha.atualizado_em;
+    const r1 = await req('PUT', '/campanhas/' + camp, { nome: 'Versão A', versao: v }, S.A);
+    expect(r1.status).toBe(200);
+    const r2 = await req('PUT', '/campanhas/' + camp, { nome: 'Versão B (atrasada)', versao: v }, S.A);
+    expect(r2.status).toBe(409);
+    expect((await req('GET', '/campanhas/' + camp, undefined, S.A)).json.campanha.nome).toBe('Versão A');
+  });
+  it('duplicar copia tema e itens ("salvar como")', async () => {
+    const r = await req('POST', '/campanhas', { nome: 'Cópia', duplicar_de: camp }, S.A);
+    const g = await req('GET', '/campanhas/' + r.json.id, undefined, S.A);
+    expect(g.json.campanha.tema.grade).toBe('4');
+    expect(g.json.campanha.itens).toHaveLength(2);
+  });
+  it('cliente B não vê, não edita e não duplica a campanha do A', async () => {
+    expect((await req('GET', '/campanhas/' + camp, undefined, S.B)).status).toBe(404);
+    expect((await req('PUT', '/campanhas/' + camp, { nome: 'x' }, S.B)).status).toBe(404);
+    expect((await req('POST', '/campanhas', { nome: 'x', duplicar_de: camp }, S.B)).status).toBe(404);
+    expect((await req('GET', '/campanhas', undefined, S.B)).json.campanhas).toHaveLength(0);
+  });
+  it('limite de produtos por campanha', async () => {
+    const muitos = Array.from({ length: 61 }, (_, i) => ({ nome: 'P' + i, preco: '1,00' }));
+    expect((await req('PUT', '/campanhas/' + camp, { itens: muitos }, S.A)).status).toBe(400);
+  });
+  it('sem o módulo encarte, nada de campanhas', async () => {
+    await req('PUT', `/admin/clientes/${S.TB}/modulos/encarte`, { ativo: false }, S.SUPER);
+    const r = await req('GET', '/campanhas', undefined, S.B);
+    expect(r.status).toBe(403); expect(r.json.erro).toBe('modulo_bloqueado');
+    await req('PUT', `/admin/clientes/${S.TB}/modulos/encarte`, { ativo: null }, S.SUPER);
+  });
+});
+
+describe('logo por loja', () => {
+  it('liga uma logo do banco à loja, e a campanha da loja traz a logo', async () => {
+    const logo = (await enviar(S.A, PNG_1x1, 'image/png', 'tipo=logo&nome=logo-loja-1')).json.id;
+    const loja = (await req('POST', '/lojas', { nome: 'Loja 1 - Rio de Janeiro' }, S.A)).json.id;
+    expect((await req('PUT', '/lojas/' + loja, { logo_asset_id: logo }, S.A)).status).toBe(200);
+    await req('PUT', '/campanhas/' + camp, { loja_id: loja }, S.A);
+    const g = await req('GET', '/campanhas/' + camp, undefined, S.A);
+    expect(g.json.campanha.loja_logo_id).toBe(logo);
+  });
+  it('não aceita como logo uma foto de produto nem a logo de outro cliente', async () => {
+    const loja = (await req('GET', '/lojas', undefined, S.A)).json.lojas[0].id;
+    const foto = (await enviar(S.A, PNG_1x1, 'image/png', 'tipo=produto&nome=foto')).json.id;
+    expect((await req('PUT', '/lojas/' + loja, { logo_asset_id: foto }, S.A)).status).toBe(400);
+    const logoB = (await enviar(S.B, PNG_1x1, 'image/png', 'tipo=logo&nome=logo-b')).json.id;
+    expect((await req('PUT', '/lojas/' + loja, { logo_asset_id: logoB }, S.A)).status).toBe(400);
+  });
+});

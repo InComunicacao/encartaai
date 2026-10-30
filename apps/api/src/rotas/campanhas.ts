@@ -1,0 +1,156 @@
+// Campanhas: o centro da EncartaAi. Encarte, vídeo, post e faixa são
+// SAÍDAS da mesma campanha — por isso os itens moram aqui, e não em cada
+// material.
+//
+// O editor salva a campanha inteira (tema + itens) de uma vez, com
+// autosave. Itens são reescritos em lote num batch: não existe estado
+// intermediário com metade dos produtos.
+
+import { Hono } from 'hono';
+import { type AppEnv, agora, auditar, erro, exigirModulo, exigirPapel, lerJson, novoId } from '../http';
+
+const MAX_ITENS = 60;
+const GRADES = new Set(['1', '4', '6', '8', '9', '12']);
+const ESTILOS = new Set(['etiqueta_vermelha', 'etiqueta_arredondada', 'sem_caixa']);
+const POLITICAS = new Set(['maior', 'medio', 'minimo']);
+
+interface ItemEntrada {
+  nome: string; descricao?: string; preco?: string; fator?: string;
+  produto_id?: string | null; foto_id?: string | null; selo_id?: string | null; rotulo_app?: string | null;
+}
+interface Tema { grade: string; estilo: string; politica: string; fundo_id: string | null }
+
+const texto = (v: unknown, max: number) => typeof v === 'string' ? v.slice(0, max) : '';
+const idOuNulo = (v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v) ? v : null;
+
+export function validarTema(t: any): Tema | string {
+  const tema: Tema = {
+    grade: String(t?.grade ?? '9'), estilo: String(t?.estilo ?? 'etiqueta_vermelha'),
+    politica: String(t?.politica ?? 'maior'), fundo_id: idOuNulo(t?.fundo_id),
+  };
+  if (!GRADES.has(tema.grade)) return 'Grade inválida.';
+  if (!ESTILOS.has(tema.estilo)) return 'Estilo de caixa inválido.';
+  if (!POLITICAS.has(tema.politica)) return 'Política de texto inválida.';
+  return tema;
+}
+
+function limparItem(i: ItemEntrada) {
+  return {
+    nome: texto(i.nome, 120), descricao: texto(i.descricao, 120), preco: texto(i.preco, 20), fator: texto(i.fator, 20),
+    produto_id: idOuNulo(i.produto_id), foto_id: idOuNulo(i.foto_id), selo_id: idOuNulo(i.selo_id),
+    rotulo_app: i.rotulo_app ? texto(i.rotulo_app, 40) : null,
+  };
+}
+
+export const rotasCampanhas = new Hono<AppEnv>();
+rotasCampanhas.use('*', exigirModulo('encarte'));
+
+rotasCampanhas.get('/', async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT c.id, c.nome, c.loja_id, l.nome AS loja_nome, c.validade_de, c.validade_ate, c.tema, c.atualizado_em,
+            (SELECT COUNT(*) FROM campanha_itens i WHERE i.campanha_id = c.id) AS itens
+       FROM campanhas c LEFT JOIN lojas l ON l.id = c.loja_id
+      WHERE c.tenant_id = ? ORDER BY c.atualizado_em DESC LIMIT 200`).bind(c.get('sessao').tenantId).all<any>();
+  return c.json({ campanhas: results.map((r) => ({ ...r, tema: JSON.parse(r.tema) })) });
+});
+
+rotasCampanhas.post('/', exigirPapel('dono', 'editor'), async (c) => {
+  const s = c.get('sessao');
+  const b = await lerJson<{ nome: string; loja_id?: string; tema?: unknown; duplicar_de?: string }>(c);
+  const nome = texto(b?.nome, 120).trim();
+  if (!nome) return erro(c, 400, 'dados_invalidos', 'Dê um nome à campanha.');
+  const id = novoId(), t0 = agora();
+
+  // "Salvar como": a dor mais frequente do uso semanal na v2.
+  if (b?.duplicar_de) {
+    const orig = await c.env.DB.prepare('SELECT loja_id, tema, validade_de, validade_ate FROM campanhas WHERE id = ? AND tenant_id = ?')
+      .bind(b.duplicar_de, s.tenantId).first<any>();
+    if (!orig) return erro(c, 404, 'nao_encontrado', 'Campanha de origem não encontrada.');
+    await c.env.DB.batch([
+      c.env.DB.prepare(`INSERT INTO campanhas (id, tenant_id, loja_id, nome, validade_de, validade_ate, tema, criado_por, criado_em, atualizado_em)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)`)
+        .bind(id, s.tenantId, orig.loja_id, nome, orig.validade_de, orig.validade_ate, orig.tema, s.usuarioId, t0, t0),
+      c.env.DB.prepare(`INSERT INTO campanha_itens (id, campanha_id, tenant_id, ordem, produto_id, dados)
+                        SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-a' ||
+                               substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))), ?, tenant_id, ordem, produto_id, dados
+                          FROM campanha_itens WHERE campanha_id = ? AND tenant_id = ?`).bind(id, b.duplicar_de, s.tenantId),
+    ]);
+    return c.json({ id }, 201);
+  }
+
+  const tema = validarTema(b?.tema ?? {});
+  if (typeof tema === 'string') return erro(c, 400, 'tema_invalido', tema);
+  const loja = b?.loja_id ? await c.env.DB.prepare('SELECT id FROM lojas WHERE id = ? AND tenant_id = ?').bind(b.loja_id, s.tenantId).first() : null;
+  await c.env.DB.prepare(`INSERT INTO campanhas (id, tenant_id, loja_id, nome, tema, criado_por, criado_em, atualizado_em)
+                          VALUES (?,?,?,?,?,?,?,?)`)
+    .bind(id, s.tenantId, loja ? b!.loja_id : null, nome, JSON.stringify(tema), s.usuarioId, t0, t0).run();
+  return c.json({ id }, 201);
+});
+
+rotasCampanhas.get('/:id', async (c) => {
+  const t = c.get('sessao').tenantId;
+  const camp = await c.env.DB.prepare(
+    `SELECT c.id, c.nome, c.loja_id, c.validade_de, c.validade_ate, c.tema, c.atualizado_em, l.logo_asset_id AS loja_logo_id
+       FROM campanhas c LEFT JOIN lojas l ON l.id = c.loja_id WHERE c.id = ? AND c.tenant_id = ?`)
+    .bind(c.req.param('id'), t).first<any>();
+  if (!camp) return erro(c, 404, 'nao_encontrado', 'Campanha não encontrada.');
+  const { results } = await c.env.DB.prepare('SELECT dados FROM campanha_itens WHERE campanha_id = ? AND tenant_id = ? ORDER BY ordem')
+    .bind(camp.id, t).all<{ dados: string }>();
+  return c.json({ campanha: { ...camp, tema: JSON.parse(camp.tema), itens: results.map((r) => JSON.parse(r.dados)) } });
+});
+
+// Salva a campanha inteira. `versao` (o atualizado_em lido) evita que um
+// autosave antigo apague o que outro computador do mesmo cliente salvou.
+rotasCampanhas.put('/:id', exigirPapel('dono', 'editor', 'operador'), async (c) => {
+  const s = c.get('sessao');
+  const id = c.req.param('id');
+  const b = await lerJson<{ nome?: string; loja_id?: string | null; validade_de?: string | null; validade_ate?: string | null;
+    tema?: unknown; itens?: ItemEntrada[]; versao?: number }>(c);
+  if (!b) return erro(c, 400, 'dados_invalidos', 'Corpo vazio.');
+  const atual = await c.env.DB.prepare('SELECT atualizado_em FROM campanhas WHERE id = ? AND tenant_id = ?').bind(id, s.tenantId)
+    .first<{ atualizado_em: number }>();
+  if (!atual) return erro(c, 404, 'nao_encontrado', 'Campanha não encontrada.');
+  if (b.versao !== undefined && b.versao !== atual.atualizado_em)
+    return erro(c, 409, 'versao_antiga', 'Esta campanha foi alterada em outro lugar. Recarregue para ver a versão mais nova.');
+
+  // Operador só mexe nos itens (preços), não no tema nem no nome.
+  if (s.papel === 'operador' && (b.nome !== undefined || b.tema !== undefined || b.loja_id !== undefined))
+    return erro(c, 403, 'sem_permissao', 'Seu perfil só atualiza os produtos e preços.');
+
+  let tema: Tema | null = null;
+  if (b.tema !== undefined) { const v = validarTema(b.tema); if (typeof v === 'string') return erro(c, 400, 'tema_invalido', v); tema = v; }
+  if (b.loja_id) {
+    const ok = await c.env.DB.prepare('SELECT 1 FROM lojas WHERE id = ? AND tenant_id = ?').bind(b.loja_id, s.tenantId).first();
+    if (!ok) return erro(c, 400, 'loja_invalida', 'Loja não encontrada.');
+  }
+  const data = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+  const t1 = Math.max(agora(), atual.atualizado_em + 1);
+  const ops = [c.env.DB.prepare(
+    `UPDATE campanhas SET nome = COALESCE(?, nome), tema = COALESCE(?, tema),
+            loja_id = CASE WHEN ? THEN ? ELSE loja_id END,
+            validade_de = CASE WHEN ? THEN ? ELSE validade_de END, validade_ate = CASE WHEN ? THEN ? ELSE validade_ate END,
+            atualizado_em = ? WHERE id = ? AND tenant_id = ?`)
+    .bind(b.nome ? texto(b.nome, 120) : null, tema ? JSON.stringify(tema) : null,
+      b.loja_id !== undefined ? 1 : 0, b.loja_id || null,
+      b.validade_de !== undefined ? 1 : 0, data(b.validade_de), b.validade_ate !== undefined ? 1 : 0, data(b.validade_ate),
+      t1, id, s.tenantId)];
+  if (b.itens !== undefined) {
+    if (!Array.isArray(b.itens) || b.itens.length > MAX_ITENS) return erro(c, 400, 'itens_invalidos', `Até ${MAX_ITENS} produtos por campanha.`);
+    ops.push(c.env.DB.prepare('DELETE FROM campanha_itens WHERE campanha_id = ? AND tenant_id = ?').bind(id, s.tenantId));
+    b.itens.forEach((i, ordem) => {
+      const limpo = limparItem(i);
+      ops.push(c.env.DB.prepare('INSERT INTO campanha_itens (id, campanha_id, tenant_id, ordem, produto_id, dados) VALUES (?,?,?,?,?,?)')
+        .bind(novoId(), id, s.tenantId, ordem, null, JSON.stringify(limpo)));
+    });
+  }
+  await c.env.DB.batch(ops);
+  return c.json({ ok: true, versao: t1 });
+});
+
+rotasCampanhas.delete('/:id', exigirPapel('dono', 'editor'), async (c) => {
+  const s = c.get('sessao');
+  const r = await c.env.DB.prepare('DELETE FROM campanhas WHERE id = ? AND tenant_id = ?').bind(c.req.param('id'), s.tenantId).run();
+  if (!r.meta.changes) return erro(c, 404, 'nao_encontrado', 'Campanha não encontrada.');
+  await auditar(c.env.DB, s, s.tenantId, 'campanha_excluida', { id: c.req.param('id') });
+  return c.json({ ok: true });
+});

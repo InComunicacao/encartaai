@@ -16,6 +16,7 @@ import { acessosEmUso, limiteDeAcessos, modulosDoTenant } from './lib/modulos';
 import { type AppEnv, agora, auditar, autenticar, erro, exigirModulo, exigirPapel, exigirTenant, lerJson, novoId } from './http';
 import { rotasBanco, rotasBancoGlobal, ROTA_UPLOAD } from './rotas/banco';
 import { rotasKit } from './rotas/kit';
+import { rotasCampanhas } from './rotas/campanhas';
 
 export type { Env } from './http';
 
@@ -268,6 +269,28 @@ cliente.post('/lojas', exigirPapel('dono', 'editor'), async (c) => {
   return c.json({ id }, 201);
 });
 
+// Nome, rodapé e logo da loja. A logo precisa ser um arquivo do tipo logo
+// visível para o cliente (próprio ou global).
+cliente.put('/lojas/:id', exigirPapel('dono', 'editor'), async (c) => {
+  const s = c.get('sessao');
+  const b = await lerJson<{ nome?: string; rodape_texto?: string | null; logo_asset_id?: string | null }>(c);
+  if (!b) return erro(c, 400, 'dados_invalidos', 'Corpo vazio.');
+  if (b.logo_asset_id) {
+    const ok = await c.env.DB.prepare(
+      `SELECT 1 FROM assets WHERE id = ? AND tipo = 'logo' AND (tenant_id = ? OR tenant_id IS NULL)`).bind(b.logo_asset_id, s.tenantId).first();
+    if (!ok) return erro(c, 400, 'logo_invalida', 'Escolha uma logo do banco de imagens.');
+  }
+  const r = await c.env.DB.prepare(
+    `UPDATE lojas SET nome = COALESCE(?, nome),
+            rodape_texto = CASE WHEN ? THEN ? ELSE rodape_texto END,
+            logo_asset_id = CASE WHEN ? THEN ? ELSE logo_asset_id END
+      WHERE id = ? AND tenant_id = ?`)
+    .bind(b.nome?.trim() ? b.nome.trim().slice(0, 120) : null, b.rodape_texto !== undefined ? 1 : 0, b.rodape_texto ?? null,
+      b.logo_asset_id !== undefined ? 1 : 0, b.logo_asset_id ?? null, c.req.param('id'), s.tenantId).run();
+  if (!r.meta.changes) return erro(c, 404, 'nao_encontrado', 'Loja não encontrada.');
+  return c.json({ ok: true });
+});
+
 // DELETE com o tenant da sessão NA CONDIÇÃO: id de loja de outro cliente
 // simplesmente não acha nada — responde 404, não "proibido", para não
 // confirmar que o id existe.
@@ -299,6 +322,7 @@ cliente.post('/exportacoes/:modulo', async (c, next) => {
 
 cliente.route('/', rotasBanco);
 cliente.route('/kit', rotasKit);
+cliente.route('/campanhas', rotasCampanhas);
 
 app.route('/', cliente);
 

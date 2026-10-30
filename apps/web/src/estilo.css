@@ -137,3 +137,21 @@ tr.clicavel:hover td { background: #fafbfc; }
   .principal { padding: 18px 16px 40px; }
   .grade-2 { grid-template-columns: 1fr; }
 }
+
+/* ── editor de campanha ── */
+.editor { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 20px; align-items: start; }
+.previa { position: sticky; top: 16px; }
+.previa canvas { width: 100%; height: auto; border-radius: 8px; box-shadow: var(--sombra), 0 8px 24px rgba(0,0,0,.08); background: #fff; display: block; }
+.titulo-editavel { font-size: 22px; font-weight: 700; border: 1px solid transparent; padding: 4px 8px; margin: 0 0 2px -8px; background: transparent; }
+.titulo-editavel:hover, .titulo-editavel:focus { border-color: var(--linha); background: #fff; }
+.texto-erro { color: var(--perigo); }
+.tabela-itens td { padding: 6px 8px; vertical-align: top; }
+.tabela-itens input { margin: 0; padding: 6px 8px; }
+.tabela-itens input.sec { margin-top: 4px; font-size: 13px; color: var(--texto-2); }
+.tabela-itens tr.fora-da-grade td { opacity: .45; }
+.miniatura-botao { width: 40px; height: 40px; padding: 0; justify-content: center; overflow: hidden; background: repeating-conic-gradient(#f1f3f5 0% 25%, #fff 0% 50%) 50% / 10px 10px; }
+.miniatura-botao img { width: 100%; height: 100%; object-fit: contain; }
+.miniatura-botao span { color: var(--texto-2); font-size: 18px; }
+.sugestoes { font-size: 12px; color: var(--aviso); margin-top: 4px; }
+.sugestoes button { font-size: 12px; padding: 2px 6px; color: var(--marca-escura); }
+@media (max-width: 1100px) { .editor { grid-template-columns: 1fr; } .previa { position: static; max-width: 420px; } }

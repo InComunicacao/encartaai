@@ -29,6 +29,20 @@ export function separarPreco(preco: string | number | null | undefined): PrecoSe
 
 export const fonteCss = (f: Fonte, px: number) => `${f.peso ?? 'normal'} ${px.toFixed(2)}px "${f.familia}"`;
 
+// Altura dos dígitos (em corpos), MEDIDA na própria fonte: alinha os
+// centavos pelo topo do inteiro em qualquer família que o cliente escolher.
+const capCache = new Map<string, number>();
+export function alturaDigitos(ctx: Ctx2D, fonte: Fonte): number {
+  const chave = fonte.familia + '|' + (fonte.peso ?? '');
+  const salvo = capCache.get(chave);
+  if (salvo) return salvo;
+  ctx.font = fonteCss(fonte, 100);
+  const a = ctx.measureText('0123456789').actualBoundingBoxAscent;
+  const v = a && a > 10 ? a / 100 : 0.72;
+  capCache.set(chave, v);
+  return v;
+}
+
 export interface MedidaPreco { largura: number; altura: number }
 
 // Mede o preço num corpo F (corpo do inteiro). Altura = altura dos dígitos

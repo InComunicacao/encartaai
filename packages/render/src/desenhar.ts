@@ -1,5 +1,5 @@
 import { maiorQueCabe } from './autofit';
-import { desenharPreco, fonteCss, medirPreco, separarPreco } from './preco';
+import { alturaDigitos, desenharPreco, fonteCss, medirPreco, separarPreco } from './preco';
 import type { EstiloCaixa } from './estilos';
 import { FATOR_POLITICA, type Ctx2D, type Formato, type Fonte, type Grade, type Imagem, type Item, type Kit, type PoliticaTexto, type Retangulo } from './tipos';
 
@@ -157,7 +157,7 @@ export function desenharCard(ctx: Ctx2D, cel: Retangulo, item: Item, kit: Kit, g
 
   const fp = dentro(fatia(estilo.fatias.preco), 0.035, 0.03);
   const p = separarPreco(item.preco);
-  const cap = kit.metricas?.capHeightPreco ?? 0.7;
+  const cap = kit.metricas?.capHeightPreco ?? alturaDigitos(ctx, kit.fontes.preco);
   const F = maiorQueCabe((s) => { const m = medirPreco(ctx, p, kit.fontes.preco, s, cap); return m.largura <= fp.w && m.altura <= fp.h; },
     t.preco * W * k, t.preco * W * 0.2);
   const m = medirPreco(ctx, p, kit.fontes.preco, F, cap);
