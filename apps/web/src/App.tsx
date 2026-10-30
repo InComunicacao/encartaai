@@ -15,6 +15,7 @@ import { Equipe } from './paginas/Equipe';
 import { Lojas } from './paginas/Lojas';
 import { Campanhas } from './paginas/Campanhas';
 import { Editor } from './paginas/Editor';
+import { Video } from './paginas/Video';
 
 interface Sessao { eu: Eu | null; recarregar: () => Promise<void>; sair: () => Promise<void> }
 const Ctx = createContext<Sessao>(null as any);
@@ -26,6 +27,9 @@ const MODULOS_MENU: { id: string; nome: string }[] = [
   { id: 'encarte', nome: 'Encarte' }, { id: 'video', nome: 'Vídeo e LED' }, { id: 'social', nome: 'Redes sociais' },
   { id: 'impressao', nome: 'Impressão' }, { id: 'ia', nome: 'IA' },
 ];
+
+// Módulos que já têm tela; os outros mostram "em breve".
+const PRONTOS = ['encarte', 'video'];
 
 export function App() {
   const [eu, setEu] = useState<Eu | null>(null);
@@ -118,7 +122,8 @@ function Casca() {
                 <Route path="encarte" element={<Campanhas />} />
                 <Route path="encarte/:id" element={<Editor />} />
               </>}
-              {MODULOS_MENU.filter((m) => m.id !== 'encarte' || !eu.modulos.includes('encarte')).map((m) =>
+              {eu.modulos.includes('video') && <Route path="video" element={<Video />} />}
+              {MODULOS_MENU.filter((m) => !PRONTOS.includes(m.id) || !eu.modulos.includes(m.id)).map((m) =>
                 <Route key={m.id} path={m.id} element={<EmBreve modulo={m} liberado={eu.modulos.includes(m.id)} />} />)}
             </>
           )}
@@ -135,7 +140,7 @@ function EmBreve({ modulo, liberado }: { modulo: { nome: string }; liberado: boo
       <h1>{modulo.nome}</h1>
       <div className="cartao vazio">
         {liberado
-          ? <p>Este módulo chega na Fase 2 da EncartaAi 3.0. Enquanto isso, o gerador atual continua funcionando.</p>
+          ? <p>Este módulo está em construção e chega nas próximas atualizações da EncartaAi.</p>
           : <p>{modulo.nome} não faz parte do seu plano. Fale com a gente para liberar.</p>}
       </div>
     </>

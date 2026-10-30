@@ -11,7 +11,8 @@ export interface Retangulo { x: number; y: number; w: number; h: number }
 // (testes em Node) satisfazem os dois.
 export type Ctx2D = Pick<CanvasRenderingContext2D,
   'save' | 'restore' | 'fillRect' | 'fillText' | 'measureText' | 'drawImage' | 'beginPath' | 'rect' | 'clip' |
-  'translate' | 'scale' | 'roundRect' | 'fill' | 'strokeText'> & {
+  'translate' | 'scale' | 'rotate' | 'roundRect' | 'fill' | 'strokeText'> & {
+  globalAlpha: number;
   font: string; fillStyle: string | CanvasGradient | CanvasPattern; textAlign: CanvasTextAlign;
   textBaseline: CanvasTextBaseline; strokeStyle: string | CanvasGradient | CanvasPattern; lineWidth: number; lineJoin: CanvasLineJoin;
 };

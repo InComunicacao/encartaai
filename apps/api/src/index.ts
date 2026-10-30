@@ -16,6 +16,7 @@ import { acessosEmUso, limiteDeAcessos, modulosDoTenant } from './lib/modulos';
 import { type AppEnv, agora, auditar, autenticar, erro, exigirModulo, exigirPapel, exigirTenant, lerJson, novoId } from './http';
 import { rotasBanco, rotasBancoGlobal, ROTA_UPLOAD } from './rotas/banco';
 import { rotasKit } from './rotas/kit';
+import { rotasFormatos } from './rotas/formatos';
 import { rotasCampanhas } from './rotas/campanhas';
 
 export type { Env } from './http';
@@ -323,6 +324,7 @@ cliente.post('/exportacoes/:modulo', async (c, next) => {
 cliente.route('/', rotasBanco);
 cliente.route('/kit', rotasKit);
 cliente.route('/campanhas', rotasCampanhas);
+cliente.route('/formatos-video', rotasFormatos);
 
 app.route('/', cliente);
 

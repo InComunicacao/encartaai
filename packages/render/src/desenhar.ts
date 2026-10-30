@@ -44,7 +44,7 @@ export function quebrar(ctx: Ctx2D, texto: string, fonte: Fonte, corpo: number, 
   return linhas.length <= max ? linhas : null;
 }
 
-function luminancia(hex: string) {
+export function luminancia(hex: string) {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
   if (!m) return 0;
   const n = parseInt(m[1], 16);
@@ -63,7 +63,7 @@ function escrever(ctx: Ctx2D, texto: string, x: number, base: number, cor: strin
 }
 
 // Uma linha de texto que cresce até o máximo e encolhe para caber.
-function linhaAjustada(ctx: Ctx2D, texto: string, fonte: Fonte, cor: string, area: Retangulo, maximo: number, contorno = false) {
+export function linhaAjustada(ctx: Ctx2D, texto: string, fonte: Fonte, cor: string, area: Retangulo, maximo: number, contorno = false) {
   if (!texto) return;
   const corpo = maiorQueCabe((s) => {
     ctx.font = fonteCss(fonte, s);
