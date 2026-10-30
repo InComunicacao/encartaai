@@ -121,3 +121,13 @@ describe('camadas e logo', () => {
     expect((await req('PUT', '/campanhas/' + id, { tema: { camadas: [{ x: 0.5 }] } }, S.A)).status).toBe(400);
   });
 });
+
+describe('tamanhos e cores gerais', () => {
+  it('guarda escalas presas e só cores válidas', async () => {
+    const id = (await req('POST', '/campanhas', { nome: 'Cores' }, S.A)).json.id;
+    await req('PUT', '/campanhas/' + id, { tema: { escala_nome: 2, escala_preco: 0.8, cores: { caixa_preco: '#0057b8', texto_preco: 'azul', inventada: '#000000' } } }, S.A);
+    const t = (await req('GET', '/campanhas/' + id, undefined, S.A)).json.campanha.tema;
+    expect(t).toMatchObject({ escala_nome: 1.5, escala_preco: 0.8, cores: { caixa_preco: '#0057b8' } });
+    expect(t.cores).not.toHaveProperty('texto_preco'); expect(t.cores).not.toHaveProperty('inventada');
+  });
+});

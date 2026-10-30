@@ -2,7 +2,7 @@
 // desenhado pelo MESMO motor que gera o PNG final — o que se vê é o que sai.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ENCARTE_VERTICAL, ESTILOS, GRADES, desenharEncarte, unitarioCombo, type Ctx2D, type PoliticaTexto } from '@encartaai/render';
+import { ENCARTE_VERTICAL, ESTILOS, FEED, GRADES, areaProdutoSozinho, desenharEncarte, desenharProdutoSozinho, unitarioCombo, type Ctx2D, type Encarte, type Formato, type PoliticaTexto } from '@encartaai/render';
 import { api, ErroApi, urlArquivo, type Asset } from '../api';
 import { useSessao } from '../App';
 import { Aviso, Modal } from '../componentes/Modal';
@@ -12,7 +12,11 @@ import { EscolherImagem, PainelCamadas, novaCamada, type CamadaApi, type LogoApi
 import { Palco } from '../componentes/Palco';
 
 interface ItemEd extends ItemCampanha { candidatos?: { id: string; nome: string; foto_id: string | null; pontuacao: number }[] }
-interface Tema { grade: string; estilo: string; politica: PoliticaTexto; fundo_id: string | null; rodape?: RodapeApi; camadas?: CamadaApi[]; logo?: LogoApi | null }
+interface Tema { grade: string; estilo: string; politica: PoliticaTexto; fundo_id: string | null; rodape?: RodapeApi; camadas?: CamadaApi[]; logo?: LogoApi | null;
+  escala_nome?: number; escala_preco?: number; cores?: Partial<Record<CorTema, string>> }
+type CorTema = 'caixa_preco' | 'texto_preco' | 'caixa_descricao' | 'texto_descricao' | 'banner_fundo' | 'banner_texto';
+const NOMES_COR: [CorTema, string][] = [['caixa_preco', 'Caixa do preço'], ['texto_preco', 'Número do preço'], ['banner_fundo', 'Faixa do app'],
+  ['banner_texto', 'Texto da faixa'], ['caixa_descricao', 'Caixa do nome'], ['texto_descricao', 'Texto do nome']];
 interface Camp { id: string; nome: string; loja_id: string | null; validade_de: string | null; validade_ate: string | null; tema: Tema; itens: ItemEd[]; atualizado_em: number }
 interface Loja { id: string; nome: string; logo_asset_id: string | null; rodape_texto: string | null }
 
@@ -76,7 +80,36 @@ export function Editor() {
     const t = setTimeout(() => salvar(camp), 1200);
     return () => clearTimeout(t);
   }, [camp, salvar]);
-  const mudar = (f: (c: Camp) => Camp) => { sujo.current = true; setCamp((c) => c && f(c)); };
+  // ── desfazer / refazer ── mudanças em sequência rápida (um arrasto) viram um passo só
+  const campRef = useRef<Camp | null>(null);
+  campRef.current = camp;
+  const passado = useRef<Camp[]>([]), futuro = useRef<Camp[]>([]), ultimo = useRef(0);
+  const [, setHist] = useState(0);
+  const mudar = (f: (c: Camp) => Camp) => {
+    const atual = campRef.current; if (!atual) return;
+    const agora = Date.now();
+    if (agora - ultimo.current > 400) { passado.current.push(atual); if (passado.current.length > 100) passado.current.shift(); }
+    ultimo.current = agora; futuro.current = [];
+    const novo = f(atual); campRef.current = novo; sujo.current = true; setCamp(novo); setHist((h) => h + 1);
+  };
+  const viajar = (de: React.MutableRefObject<Camp[]>, para: React.MutableRefObject<Camp[]>) => {
+    const atual = campRef.current, alvo = de.current.pop();
+    if (!atual || !alvo) return;
+    para.current.push(atual); ultimo.current = 0;
+    // a versão no servidor é a do último save, não a da foto do histórico
+    const novo = { ...alvo, atualizado_em: atual.atualizado_em };
+    campRef.current = novo; sujo.current = true; setCamp(novo); setHist((h) => h + 1);
+  };
+  const desfazer = () => viajar(passado, futuro), refazer = () => viajar(futuro, passado);
+  useEffect(() => {
+    const t = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || (e.target as HTMLElement).closest('input,textarea,[contenteditable]')) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) { e.preventDefault(); desfazer(); }
+      else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); refazer(); }
+    };
+    window.addEventListener('keydown', t); return () => window.removeEventListener('keydown', t);
+  });
   const mudarItem = (i: number, campo: keyof ItemEd, v: unknown) => mudar((c) => ({ ...c, itens: c.itens.map((x, j) => j === i ? { ...x, [campo]: v } : x) }));
   const mudarTema = (t: Partial<Tema>) => mudar((c) => ({ ...c, tema: { ...c.tema, ...t } }));
 
@@ -149,13 +182,20 @@ export function Editor() {
 
   // ── desenho ──
   const tela = useRef<HTMLCanvasElement>(null);
-  const desenhar = useCallback(async (canvas: HTMLCanvasElement, c: Camp, escala: number) => {
-    const { kit, fontes } = kitDoCliente(kitApi);
+  const montar = useCallback(async (c: Camp): Promise<Encarte> => {
+    const { kit: kitBase, fontes } = kitDoCliente(kitApi);
+    const cc = c.tema.cores || {};
+    const kit = { ...kitBase, cores: { ...kitBase.cores, ...(cc.caixa_preco ? { caixa_preco: cc.caixa_preco } : {}), ...(cc.texto_preco ? { texto_preco: cc.texto_preco } : {}),
+      ...(cc.caixa_descricao ? { caixa_descricao: cc.caixa_descricao } : {}), ...(cc.texto_descricao ? { texto_nome: cc.texto_descricao, texto_descricao: cc.texto_descricao } : {}),
+      ...(cc.banner_fundo ? { banner_fundo: cc.banner_fundo } : {}), ...(cc.banner_texto ? { banner_texto: cc.banner_texto } : {}) } };
     const grade = GRADES[c.tema.grade];
     const usados = c.itens.slice(0, grade.celulas.length);
     const loja = lojas.find((l) => l.id === c.loja_id);
     const [fundo, logo, itens, rodape] = await Promise.all([carregarImagem(c.tema.fundo_id), carregarImagem(loja?.logo_asset_id),
-      Promise.all(usados.map(itemDoMotor)),
+      Promise.all(usados.map(async (i) => {
+        const m = await itemDoMotor(i);   // tamanho geral × ajuste do produto
+        return { ...m, escalaNome: (m.escalaNome ?? 1) * (c.tema.escala_nome ?? 1), escalaPreco: (m.escalaPreco ?? 1) * (c.tema.escala_preco ?? 1) };
+      })),
       rodapeDoMotor(c.tema.rodape ?? rodapePadrao(kitApi), { de: c.validade_de, ate: c.validade_ate, loja: loja?.nome, lojaTexto: loja?.rodape_texto }),
       ...fontes.map(carregarFonte)]);
     const cams = c.tema.camadas || [];
@@ -164,11 +204,16 @@ export function Editor() {
     imgs.forEach((im, k) => { if (im && im.width && proporcoes[cams[k].asset_id] === undefined) novas[cams[k].asset_id] = im.height / im.width; });
     if (Object.keys(novas).length) setProporcoes((x) => ({ ...x, ...novas }));
     const camadas = cams.map((x, k) => ({ ...x, imagem: imgs[k] as any }));
+    return { formato: ENCARTE_VERTICAL, grade, estilo: ESTILOS[c.tema.estilo], kit, itens, fundo: fundo as any, logo: logo as any,
+      politica: c.tema.politica, rodape, camadas, logoAjuste: c.tema.logo };
+  }, [kitApi, lojas, proporcoes]);
+  const desenhar = useCallback(async (canvas: HTMLCanvasElement, c: Camp, escala: number, mudar?: Partial<Encarte>) => {
+    const e = { ...(await montar(c)), ...mudar };
     const ctx = canvas.getContext('2d') as unknown as Ctx2D;
     ctx.save(); (ctx as any).setTransform(1, 0, 0, 1, 0, 0);
-    desenharEncarte(ctx, { formato: ENCARTE_VERTICAL, grade, estilo: ESTILOS[c.tema.estilo], kit, itens, fundo: fundo as any, logo: logo as any, politica: c.tema.politica, rodape, camadas, logoAjuste: c.tema.logo }, escala);
+    desenharEncarte(ctx, e, escala);
     ctx.restore();
-  }, [kitApi, lojas, proporcoes]);
+  }, [montar]);
   useEffect(() => {
     if (!camp || !tela.current) return;
     let vivo = true;
@@ -181,19 +226,53 @@ export function Editor() {
     return () => { vivo = false; clearTimeout(t); };
   }, [camp, desenhar]);
 
-  async function exportar() {
+  const [menuExportar, setMenuExportar] = useState(false);
+  const baixar = (blob: Blob, nome: string) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = nome;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+  const png = (cv: HTMLCanvasElement) => new Promise<Blob>((ok) => cv.toBlob((b) => ok(b!), 'image/png'));
+  const nomeBase = () => (camp?.nome || 'encarte').replace(/[\\/:*?"<>|]+/g, '-');
+  // tipo: 'png' (1080×1920), 'png2x', 'feed', 'transparente', 'produto'
+  async function exportar(tipo: 'png' | 'png2x' | 'feed' | 'transparente' | 'produto' = 'png') {
     if (!camp) return;
-    setErro('');
+    setErro(''); setMenuExportar(false);
     try {
       await api.post('/exportacoes/encarte');
-      const cv = document.createElement('canvas'); cv.width = ENCARTE_VERTICAL.w; cv.height = ENCARTE_VERTICAL.h;
-      await desenhar(cv, camp, 1);
-      const blob: Blob = await new Promise((ok) => cv.toBlob((b) => ok(b!), 'image/png'));
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob); a.download = (camp.nome || 'encarte').replace(/[\\/:*?"<>|]+/g, '-') + '.png';
-      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      if (tipo === 'produto') {
+        if (sel == null || !camp.itens[sel]) { setErro('Selecione um produto (clique nele no encarte) para exportar só ele.'); return; }
+        const e = await montar(camp), a = areaProdutoSozinho(e, sel), k = 2;
+        const cv = document.createElement('canvas'); cv.width = Math.ceil(a.w * k); cv.height = Math.ceil(a.h * k);
+        desenharProdutoSozinho(cv.getContext('2d') as unknown as Ctx2D, e, sel, k);
+        return baixar(await png(cv), `${nomeBase()} - ${(camp.itens[sel].nome || 'produto ' + (sel + 1)).replace(/[\\/:*?"<>|]+/g, '-')}.png`);
+      }
+      const formato: Formato = tipo === 'feed' ? FEED : ENCARTE_VERTICAL, k = tipo === 'png2x' ? 2 : 1;
+      const cv = document.createElement('canvas'); cv.width = formato.w * k; cv.height = formato.h * k;
+      await desenhar(cv, camp, k, { formato, ...(tipo === 'transparente' ? { somenteProdutos: true } : {}) });
+      const sufixo = { png: '', png2x: ' (2x)', feed: ' - feed', transparente: ' - transparente' }[tipo];
+      baixar(await png(cv), nomeBase() + sufixo + '.png');
     } catch (x) { setErro(x instanceof ErroApi ? x.message : 'Não foi possível exportar.'); }
   }
+
+  // ── modelo: o visual da campanha (tema) num arquivo, para reaproveitar ──
+  function exportarModelo() {
+    if (!camp) return;
+    setMenuExportar(false);
+    baixar(new Blob([JSON.stringify({ encartaai_modelo: 1, nome: camp.nome, tema: camp.tema }, null, 2)], { type: 'application/json' }), nomeBase() + ' - modelo.json');
+  }
+  async function importarModelo(f?: File) {
+    if (!f) return;
+    try {
+      const m = JSON.parse(await f.text());
+      if (!m || m.encartaai_modelo !== 1 || typeof m.tema !== 'object') throw new Error();
+      mudar((c) => ({ ...c, tema: { ...c.tema, ...m.tema } }));
+    } catch { setErro('Este arquivo não é um modelo da EncartaAi.'); }
+  }
+
+  // ── zoom da prévia ──
+  const [zoom, setZoom] = useState(1);
+  const zoomPara = (z: number) => setZoom(Math.round(Math.min(3, Math.max(0.5, z)) * 100) / 100);
 
   if (!camp) return <p>Carregando…</p>;
   const capacidade = GRADES[camp.tema.grade].celulas.length;
@@ -208,7 +287,27 @@ export function Editor() {
             onChange={(e) => mudar((c) => ({ ...c, nome: e.target.value }))} />
           <p className={'sub' + (estado.tipo === 'erro' ? ' texto-erro' : '')} role="status" style={{ marginBottom: 0 }}>{estado.texto || 'Tudo salvo'}</p>
         </div>
-        <button className="primario" onClick={exportar}>Exportar PNG</button>
+        <div className="linha">
+          <button aria-label="Desfazer" title="Desfazer (Ctrl+Z)" disabled={!passado.current.length} onClick={desfazer}>↶</button>
+          <button aria-label="Refazer" title="Refazer (Ctrl+Shift+Z)" disabled={!futuro.current.length} onClick={refazer}>↷</button>
+          <div className="menu-exportar">
+            <button className="primario" onClick={() => exportar('png')}>Exportar PNG</button>
+            <button className="primario seta" aria-label="Mais formatos" aria-expanded={menuExportar} onClick={() => setMenuExportar((v) => !v)}>▾</button>
+            {menuExportar && (
+              <div className="menu" role="menu">
+                <button role="menuitem" onClick={() => exportar('png')}>PNG 1080×1920</button>
+                <button role="menuitem" onClick={() => exportar('png2x')}>PNG em alta (2160×3840)</button>
+                <button role="menuitem" onClick={() => exportar('feed')}>Feed do Instagram (1080×1350)</button>
+                <button role="menuitem" onClick={() => exportar('transparente')}>Só os produtos (fundo transparente)</button>
+                <button role="menuitem" onClick={() => exportar('produto')} disabled={sel == null}>Só o produto selecionado{sel != null ? ` (${sel + 1})` : ''}</button>
+                <hr />
+                <button role="menuitem" onClick={exportarModelo}>Salvar modelo (.json)</button>
+                {!operador && <label className="botao" role="menuitem">Usar modelo…<input type="file" accept=".json,application/json" hidden aria-label="Importar modelo"
+                  onChange={(e) => { setMenuExportar(false); importarModelo(e.target.files?.[0]); e.target.value = ''; }} /></label>}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
       <Aviso>{erro}</Aviso>
 
@@ -226,6 +325,27 @@ export function Editor() {
                 <label>Tamanho do texto<select value={camp.tema.politica} onChange={(e) => mudarTema({ politica: e.target.value as PoliticaTexto })}>
                   <option value="maior">Maior possível</option><option value="medio">Médio</option><option value="minimo">Mínimo</option></select></label>
               </div>
+              <details className="mais-opcoes">
+                <summary>Tamanhos e cores do preço</summary>
+                <div className="linha" style={{ margin: '8px 0' }}>
+                  <span>Nomes</span>
+                  <button aria-label="Diminuir todos os nomes" onClick={() => mudarTema({ escala_nome: Math.max(0.5, +((camp.tema.escala_nome ?? 1) - 0.05).toFixed(2)) })}>−</button>
+                  <span className="valor">{Math.round((camp.tema.escala_nome ?? 1) * 100)}%</span>
+                  <button aria-label="Aumentar todos os nomes" onClick={() => mudarTema({ escala_nome: Math.min(1.5, +((camp.tema.escala_nome ?? 1) + 0.05).toFixed(2)) })}>+</button>
+                  <span style={{ marginLeft: 12 }}>Preços</span>
+                  <button aria-label="Diminuir todos os preços" onClick={() => mudarTema({ escala_preco: Math.max(0.5, +((camp.tema.escala_preco ?? 1) - 0.05).toFixed(2)) })}>−</button>
+                  <span className="valor">{Math.round((camp.tema.escala_preco ?? 1) * 100)}%</span>
+                  <button aria-label="Aumentar todos os preços" onClick={() => mudarTema({ escala_preco: Math.min(1.5, +((camp.tema.escala_preco ?? 1) + 0.05).toFixed(2)) })}>+</button>
+                </div>
+                <div className="cores-rodape">
+                  {NOMES_COR.map(([k, nome]) => (
+                    <div key={k} className="cor-rodape"><span>{nome}</span>
+                      <span className="linha"><input type="color" aria-label={'Cor: ' + nome} value={camp.tema.cores?.[k] || '#ffffff'}
+                        onChange={(e) => mudarTema({ cores: { ...camp.tema.cores, [k]: e.target.value } })} />
+                        {camp.tema.cores?.[k] ? <button className="discreto" onClick={() => { const n = { ...camp.tema.cores }; delete n[k]; mudarTema({ cores: n }); }}>kit</button>
+                          : <span className="sub" style={{ margin: 0 }}>do kit</span>}</span></div>))}
+                </div>
+              </details>
               <label style={{ marginBottom: 0 }}>Fundo / tema
                 <select value={camp.tema.fundo_id || ''} onChange={(e) => mudarTema({ fundo_id: e.target.value || null })}>
                   <option value="">Branco</option>{fundos.map((f) => <option key={f.id} value={f.id}>{f.nome}{f.global ? ' (EncartaAi)' : ''}</option>)}</select></label>
@@ -291,6 +411,15 @@ export function Editor() {
         </div>
 
         <div className="previa">
+          <div className="barra-zoom">
+            <button aria-label="Diminuir zoom" onClick={() => zoomPara(zoom - 0.25)}>−</button>
+            <button className="discreto" onClick={() => zoomPara(1)} title="Ajustar à tela">{Math.round(zoom * 100)}%</button>
+            <button aria-label="Aumentar zoom" onClick={() => zoomPara(zoom + 0.25)}>+</button>
+            <span className="espaco" />
+            {sel != null && <span className="sub" style={{ margin: 0 }}>Produto {sel + 1} selecionado</span>}
+          </div>
+          <div className="area-zoom" onWheel={(e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoomPara(zoom * (e.deltaY < 0 ? 1.1 : 0.9)); } }}>
+          <div style={{ width: zoom * 100 + '%' }}>
           <Palco grade={GRADES[camp.tema.grade]} camadas={camadas} proporcao={(a) => proporcoes[a] ?? 1}
             itemVisivel={(i) => !!camp.itens[i] && !camp.itens[i].oculto} fotoAjuste={(i) => camp.itens[i]?.foto_ajuste || { dx: 0, dy: 0, escala: 1 }}
             selCamada={selCamada} selItem={aba === 'produtos' ? sel : null} editavel={!operador}
@@ -300,6 +429,7 @@ export function Editor() {
             aoMoverFoto={(i, dx, dy) => mudarItem(i, 'foto_ajuste', { ...(camp.itens[i].foto_ajuste || { escala: 1 }), dx, dy })}>
             <canvas ref={tela} width={1080} height={1920} aria-label="Prévia do encarte" />
           </Palco>
+          </div></div>
         </div>
       </div>
 

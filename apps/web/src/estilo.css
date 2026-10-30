@@ -220,3 +220,17 @@ button.ativo { background: var(--texto); color: #fff; border-color: var(--texto)
 .painel-camadas .valor { min-width: 44px; text-align: center; }
 .ajuste-camada { border-top: 1px solid var(--linha); margin-top: 10px; padding-top: 10px; }
 .ajuste-camada .linha { gap: 6px; } .ajuste-camada button { min-width: 34px; }
+
+/* exportar, zoom, opções */
+.menu-exportar { position: relative; display: inline-flex; }
+.menu-exportar > button.primario:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.menu-exportar > button.seta { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 1px solid rgba(255,255,255,.35); padding: 0 10px; }
+.menu-exportar .menu { position: absolute; right: 0; top: calc(100% + 4px); background: #fff; border: 1px solid var(--linha); border-radius: 10px; box-shadow: 0 12px 28px rgba(0,0,0,.14); z-index: 30; min-width: 280px; padding: 6px; display: flex; flex-direction: column; }
+.menu-exportar .menu button, .menu-exportar .menu .botao { border: 0; background: none; text-align: left; padding: 8px 10px; border-radius: 6px; justify-content: flex-start; font-weight: 500; }
+.menu-exportar .menu button:hover, .menu-exportar .menu .botao:hover { background: #f3f4f6; }
+.menu-exportar .menu hr { border: 0; border-top: 1px solid var(--linha); margin: 4px 0; }
+.barra-zoom { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+.barra-zoom button { padding: 4px 10px; }
+.area-zoom { overflow: auto; max-height: calc(100vh - 80px); border-radius: 8px; }
+.mais-opcoes { margin: 4px 0 12px; } .mais-opcoes summary { cursor: pointer; font-weight: 600; color: var(--texto-2); }
+.mais-opcoes .linha { gap: 6px; } .mais-opcoes .valor { min-width: 44px; text-align: center; }

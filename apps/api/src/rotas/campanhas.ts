@@ -26,7 +26,9 @@ interface RodapeTema { transparente: boolean; cor_fundo: string | null; cor_text
   personagem_id: string | null; blocos: BlocoRodape[] }
 interface CamadaTema { id: string; asset_id: string; x: number; y: number; w: number; rot: number; atras: boolean; oculto: boolean; ancora: number | null }
 interface Tema { grade: string; estilo: string; politica: string; fundo_id: string | null; rodape?: RodapeTema;
-  camadas?: CamadaTema[]; logo?: { escala: number; dx: number; dy: number } }
+  camadas?: CamadaTema[]; logo?: { escala: number; dx: number; dy: number };
+  escala_nome?: number; escala_preco?: number; cores?: Record<string, string> }
+const CORES_TEMA = ['caixa_preco', 'texto_preco', 'caixa_descricao', 'texto_descricao', 'banner_fundo', 'banner_texto'];
 const MAX_CAMADAS = 40;
 const preso = (v: unknown, min: number, max: number, padrao: number) => { const n = Number(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : padrao; };
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -72,6 +74,12 @@ export function validarTema(t: any): Tema | string {
         atras: c?.atras === true, oculto: c?.oculto === true,
         ancora: ancora != null && Number.isInteger(ancora) && ancora >= 0 && ancora < MAX_ITENS ? ancora : null });
     }
+  }
+  if (t?.escala_nome != null) tema.escala_nome = preso(t.escala_nome, 0.5, 1.5, 1);
+  if (t?.escala_preco != null) tema.escala_preco = preso(t.escala_preco, 0.5, 1.5, 1);
+  if (t?.cores != null && typeof t.cores === 'object') {
+    tema.cores = {};
+    for (const k of CORES_TEMA) if (typeof t.cores[k] === 'string' && HEX.test(t.cores[k])) tema.cores[k] = t.cores[k];
   }
   if (t?.logo != null) tema.logo = { escala: preso(t.logo?.escala, 0.3, 3, 1), dx: preso(t.logo?.dx, -1, 1, 0), dy: preso(t.logo?.dy, -1, 1, 0) };
   return tema;
