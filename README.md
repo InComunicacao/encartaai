@@ -39,3 +39,14 @@ cd ../api && npx wrangler dev          # API + telas em http://127.0.0.1:8787
 ```
 
 Teste de ponta a ponta pelas telas (Playwright): `node apps/web/e2e/fluxo.cjs`
+
+## Motor de render (packages/render)
+
+Desenha qualquer saída a partir de dados (campanha + kit da marca + templates), no navegador e em Node.
+Grades e estilos medidos na v2 (`test/geometria_v2.json` → `src/medidas-v2.json`).
+
+```
+cd packages/render && npm install && npm test
+# com as fontes do cliente (não versionadas) e PNGs de saída:
+FONTES_GOTHAM=/caminho/fontes SAIDA_RENDER=/tmp/render npm test
+```
