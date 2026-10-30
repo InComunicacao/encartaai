@@ -3,7 +3,7 @@
 //
 // Desenhar antes de a fonte chegar é o bug clássico "a fonte saiu errada
 // no export" — por isso tudo aqui é aguardado.
-import { KIT_PADRAO, type Fonte, type Imagem, type Item, type Kit } from '@encartaai/render';
+import { KIT_PADRAO, preencherTexto, type Fonte, type Imagem, type Item, type Kit, type Rodape } from '@encartaai/render';
 import { urlArquivo } from './api';
 
 interface FonteApi { origem: 'google' | 'arquivo'; familia: string; asset_id?: string; peso?: number }
@@ -120,5 +120,34 @@ export async function itemDoMotor(i: ItemCampanha): Promise<Item> {
     foto: foto as any, selo: selo as any, oculto: !!i.oculto, fotoAjuste: i.foto_ajuste || undefined,
     escalaNome: i.escala_nome ?? undefined, escalaPreco: i.escala_preco ?? undefined,
     combo: c && c.preco ? { precoFora: c.preco_fora, rotuloFora: c.rotulo_fora, qtd: c.qtd, preco: c.preco, unit: c.unit, rotulo: c.rotulo, rotuloUnit: c.rotulo_unit } : null,
+  };
+}
+
+// ── rodapé ──
+export interface BlocoRodapeApi { texto: string; tamanho: number; negrito: boolean; alinhar: 'esquerda' | 'centro' | 'direita'; oculto: boolean }
+export interface RodapeApi { transparente: boolean; cor_fundo: string | null; cor_texto: string | null; cor_barras: string | null;
+  personagem_id: string | null; blocos: BlocoRodapeApi[] }
+const bloco = (texto: string, tamanho = 1, negrito = false): BlocoRodapeApi => ({ texto, tamanho, negrito, alinhar: 'centro', oculto: false });
+export const BLOCOS_PRONTOS: { nome: string; bloco: BlocoRodapeApi }[] = [
+  { nome: 'Consulte limite por CPF', bloco: bloco('CONSULTE LIMITE POR CPF NO APP', 1, true) },
+  { nome: 'Validade com as datas', bloco: bloco('OFERTAS VÁLIDAS DE {de} A {ate} OU ENQUANTO DURAREM OS ESTOQUES PROMOCIONAIS NO PERÍODO ANUNCIADO.', 0.7) },
+  { nome: 'Texto legal', bloco: bloco('IMAGENS MERAMENTE ILUSTRATIVAS. Nos reservamos o direito de corrigir eventuais erros de digitação, informações ou valores divulgados. Por se tratar de estabelecimento varejista, poderá haver limitação na quantidade de produtos vendidos por cliente.', 0.5) },
+  { nome: 'Texto da loja (endereço, telefone)', bloco: bloco('{loja_texto}', 0.7) },
+];
+// O rodapé de uma campanha que ainda não foi personalizada: vem do kit.
+export function rodapePadrao(k: KitApi): RodapeApi {
+  const t = k.textos || {};
+  const blocos = [
+    ...(t.rodape ? [bloco(t.rodape, 1, true)] : []),
+    bloco(t.validade_prefixo ? t.validade_prefixo + ' {de} A {ate}' : BLOCOS_PRONTOS[1].bloco.texto, 0.7),
+    bloco(t.aviso_legal || BLOCOS_PRONTOS[2].bloco.texto, 0.5),
+  ];
+  return { transparente: false, cor_fundo: null, cor_texto: null, cor_barras: null, personagem_id: null, blocos };
+}
+export async function rodapeDoMotor(r: RodapeApi, v: { de?: string | null; ate?: string | null; loja?: string | null; lojaTexto?: string | null }): Promise<Rodape> {
+  return {
+    transparente: r.transparente, corFundo: r.cor_fundo || undefined, corTexto: r.cor_texto || undefined, corBarras: r.cor_barras || undefined,
+    personagem: (await carregarImagem(r.personagem_id)) as any,
+    blocos: r.blocos.map((b) => ({ ...b, texto: preencherTexto(b.texto, v) })),
   };
 }

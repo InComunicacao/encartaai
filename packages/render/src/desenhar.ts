@@ -1,6 +1,7 @@
 import { maiorQueCabe } from './autofit';
 import { alturaDigitos, desenharPreco, fonteCss, medirPreco, separarPreco } from './preco';
 import type { EstiloCaixa } from './estilos';
+import { desenharRodape, type Rodape } from './rodape';
 import { FATOR_POLITICA, type Combo, type Ctx2D, type Formato, type Fonte, type Grade, type Imagem, type Item, type Kit, type PoliticaTexto, type Retangulo } from './tipos';
 
 const ALTURA_LINHA = 1.05;                  // em corpos
@@ -246,6 +247,7 @@ export interface Encarte {
   fundo?: Imagem | null;
   logo?: Imagem | null;
   politica?: PoliticaTexto;
+  rodape?: Rodape | null;
 }
 
 export function desenharEncarte(ctx: Ctx2D, e: Encarte, escala = 1): ResultadoCard[] {
@@ -260,19 +262,9 @@ export function desenharEncarte(ctx: Ctx2D, e: Encarte, escala = 1): ResultadoCa
     ? desenharCard(ctx, px(c, f), e.itens[i], e.kit, e.grade, e.estilo, e.politica)
     : { corpoNome: 0, corpoPreco: 0 });
 
-  const r = px(f.rodape, f);
-  ctx.fillStyle = e.kit.cores.rodape_fundo;
-  ctx.fillRect(r.x, r.y, r.w, r.h);
-  const area = dentro(r, 0.04, 0.12);
-  const corpo = maiorQueCabe((s) => {
-    const l = quebrar(ctx, e.kit.textos.rodape, e.kit.fontes.rodape, s, area.w, 6);
-    return !!l && l.length * s * 1.2 <= area.h;
-  }, area.h * 0.3, 6);
-  const linhas = quebrar(ctx, e.kit.textos.rodape, e.kit.fontes.rodape, corpo, area.w, 99) || [];
-  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = e.kit.cores.rodape_texto;
-  ctx.font = fonteCss(e.kit.fontes.rodape, corpo);
-  let y = area.y + (area.h - linhas.length * corpo * 1.2) / 2;
-  for (const l of linhas) { y += corpo * 1.2; ctx.fillText(l, area.x + area.w / 2, y - corpo * 0.3); }
+  // rodapé: o da campanha (blocos, personagem, cores) ou, sem ele, o
+  // texto do kit numa faixa simples
+  desenharRodape(ctx, px(f.rodape, f), e.rodape ?? { blocos: [{ texto: e.kit.textos.rodape }] }, e.kit);
 
   ctx.restore();
   return res;

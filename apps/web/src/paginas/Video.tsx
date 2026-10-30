@@ -9,13 +9,14 @@ import { DUR_PRODUTO_PADRAO, ESTILOS, FORMATOS_VIDEO_PADRAO, VIDEO_FPS, desenhar
 import { api, ErroApi, type Asset } from '../api';
 import { useSessao } from '../App';
 import { Aviso, Modal } from '../componentes/Modal';
-import { carregarFonte, carregarImagem, itemDoMotor, kitDoCliente, type ItemCampanha, type KitApi } from '../render-web';
+import { carregarFonte, carregarImagem, itemDoMotor, kitDoCliente, rodapeDoMotor, rodapePadrao, type ItemCampanha, type KitApi, type RodapeApi } from '../render-web';
 import { gravarMp4, podeGravarMp4 } from '../video/gravador';
 
 type ItemC = ItemCampanha;
-interface Camp { id: string; nome: string; loja_id: string | null; tema: { estilo: string; politica: PoliticaTexto; fundo_id: string | null }; itens: ItemC[] }
+interface Camp { id: string; nome: string; loja_id: string | null; validade_de: string | null; validade_ate: string | null;
+  tema: { estilo: string; politica: PoliticaTexto; fundo_id: string | null; rodape?: RodapeApi }; itens: ItemC[] }
 interface Linha { id: string; nome: string; itens: number }
-interface Loja { id: string; logo_asset_id: string | null }
+interface Loja { id: string; nome: string; logo_asset_id: string | null; rodape_texto: string | null }
 export interface FormatoApi { id: string; nome: string; w: number; h: number; rotacao: 0 | 90 | -90; layout: 'card' | 'faixa' | null;
   animacao: AnimacaoVideo | null; fundo: FundoVideo; arte_asset_id: string | null; dur_produto: number | null; max_produtos: number | null; dur_max: number | null }
 
@@ -88,13 +89,14 @@ export function Video() {
     let vivo = true;
     (async () => {
       const { kit, fontes } = kitDoCliente(kitApi);
-      const logoId = lojas.find((l) => l.id === camp.loja_id)?.logo_asset_id;
+      const loja = lojas.find((l) => l.id === camp.loja_id), logoId = loja?.logo_asset_id;
+      const rodape = await rodapeDoMotor(camp.tema.rodape ?? rodapePadrao(kitApi), { de: camp.validade_de, ate: camp.validade_ate, loja: loja?.nome, lojaTexto: loja?.rodape_texto });
       const fundoId = fundo === 'encarte' ? camp.tema.fundo_id : fundo === 'arte' ? arteId : null;
       const [img, logo, todos] = await Promise.all([carregarImagem(fundoId), carregarImagem(logoId),
         Promise.all(escolhidos.slice(0, limite).map(itemDoMotor)), ...fontes.map(carregarFonte)]);
       const itens: Item[] = todos.map((i) => ({ ...i, oculto: false }));
       if (vivo) setCena({ formato, kit, estilo: ESTILOS[camp.tema.estilo] || ESTILOS.etiqueta_vermelha, politica: camp.tema.politica, itens,
-        fundo, fundoImagem: img as any, corFundo: cor, logo: logo as any, durProduto: dur, animacao: anim });
+        fundo, fundoImagem: img as any, corFundo: cor, logo: logo as any, rodape, durProduto: dur, animacao: anim });
     })();
     return () => { vivo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,0 +1,62 @@
+const { chromium } = require('playwright');
+const fs = require('fs'), path = require('path'), os = require('os');
+// Parte 4B: rodapé personalizado. Precisa: wrangler dev com super admin local; e2e/imagens/queijo.png.
+const B = process.env.BASE || 'http://127.0.0.1:8787', N = String(Date.now() % 100000);
+const passos = []; const ok = (n, c, x = '') => passos.push((c ? 'PASS ' : 'FALHA ') + n + (x ? '  → ' + x : ''));
+(async () => {
+  const b = await chromium.launch();
+  const p = await (await b.newContext({ viewport: { width: 1500, height: 1000 } })).newPage();
+  const erros = []; p.on('pageerror', (e) => erros.push(e.message));
+  await p.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  await p.goto(B + '/entrar');
+  const personagem = Array.from(fs.readFileSync(path.join(__dirname, 'imagens', 'queijo.png')));
+  const id = await p.evaluate(async ({ N, personagem }) => {
+    const j = (m, u, d) => fetch(u, { method: m, headers: { 'content-type': 'application/json' }, body: JSON.stringify(d ?? {}) }).then((r) => r.json());
+    await j('POST', '/api/auth/entrar', { email: 'daniel@incomunicacao.com.br', senha: 'senha-super-123' });
+    await j('POST', '/api/admin/clientes', { nome: 'Mercado 4B ' + N, slug: 'm4b-' + N, plano_id: 'completo', dono: { email: `m4b${N}@x.test`, nome: 'Dona', senha: 'senha-dono-123' } });
+    await j('POST', '/api/auth/sair');
+    await j('POST', '/api/auth/entrar', { email: `m4b${N}@x.test`, senha: 'senha-dono-123' });
+    await fetch('/api/assets/arquivo?tipo=personagem&nome=mascote', { method: 'POST', headers: { 'content-type': 'image/png' }, body: new Uint8Array(personagem) });
+    const l = await j('POST', '/api/lojas', { nome: 'Loja 1 - Rio de Janeiro' });
+    await j('PUT', '/api/lojas/' + l.id, { rodape_texto: 'Rua das Flores, 100 · (21) 0000-0000' });
+    const c = await j('POST', '/api/campanhas', { nome: 'Rodapé' });
+    await j('PUT', '/api/campanhas/' + c.id, { loja_id: l.id, itens: [{ nome: 'Arroz', preco: '24,90' }] });
+    return c.id;
+  }, { N, personagem });
+  await p.goto(B + '/encarte/' + id);
+  await p.waitForSelector('canvas[aria-label="Prévia do encarte"]'); await p.waitForTimeout(800);
+  const previa = () => p.locator('canvas[aria-label="Prévia do encarte"]').screenshot({ clip: undefined });
+  const rodapePx = async () => (await p.locator('.previa').screenshot());
+  let antes = await rodapePx();
+  await p.click('button[role=tab]:has-text("Rodapé")');
+  await p.waitForSelector('.painel-rodape');
+  ok('rodapé começa com os textos do kit', (await p.locator('.bloco-rodape').count()) === 2);
+  await p.fill('.painel-rodape label:has-text("Validade: de") input', '2026-11-01');
+  await p.fill('.painel-rodape label:has-text("até") input', '2026-11-07');
+  await p.selectOption('select[aria-label="Adicionar texto"]', { label: 'Consulte limite por CPF' });
+  await p.selectOption('select[aria-label="Adicionar texto"]', { label: 'Texto da loja (endereço, telefone)' });
+  await p.locator('.bloco-rodape').nth(2).locator('button[aria-label="Subir bloco"]').click();
+  await p.locator('.bloco-rodape').nth(1).locator('button[aria-label="Subir bloco"]').click();
+  ok('bloco CPF subiu para o topo', (await p.locator('.bloco-rodape textarea').first().inputValue()).startsWith('CONSULTE'));
+  for (let i = 0; i < 3; i++) await p.locator('.bloco-rodape').nth(2).locator('button[aria-label="Aumentar texto"]').click();
+  ok('texto legal aumentou para 80%', (await p.locator('.bloco-rodape').nth(2).locator('.valor').textContent()) === '80%');
+  await p.locator('.bloco-rodape').nth(3).locator('button[title="Alinhar à esquerda"]').click();
+  await p.selectOption('.painel-rodape label:has-text("Personagem") select', { label: 'mascote' });
+  await p.waitForSelector('text=Salvo às', { timeout: 10000 }); await p.waitForTimeout(1500);
+  ok('prévia mudou', Buffer.compare(antes, await rodapePx()) !== 0);
+  await p.screenshot({ path: path.join(os.tmpdir(), 'rodape4b.png') });
+  const c = await p.evaluate(async (id) => (await (await fetch('/api/campanhas/' + id)).json()).campanha, id);
+  const r = c.tema.rodape;
+  ok('salvo: validade, 4 blocos, personagem, alinhamento', c.validade_de === '2026-11-01' && r.blocos.length === 4 && !!r.personagem_id && r.blocos[3].alinhar === 'esquerda',
+    JSON.stringify({ v: c.validade_de, n: r.blocos.length }));
+  // transparente
+  await p.check('.painel-rodape input[type=checkbox]');
+  await p.waitForTimeout(1500);
+  const transp = await p.locator('canvas[aria-label="Prévia do encarte"]').evaluate((cv) => Array.from(cv.getContext('2d').getImageData(4, cv.height - 30, 1, 1).data));
+  ok('rodapé transparente mostra o fundo (branco)', transp[0] > 240 && transp[1] > 240 && transp[2] > 240, transp.join(','));
+  await p.click('button:has-text("Voltar ao padrão do kit")');
+  ok('voltar ao padrão', (await p.locator('.bloco-rodape').count()) === 2);
+  ok('sem erros de JavaScript', erros.length === 0, erros.join(' | '));
+  console.log(passos.join('\n') + '\n\n' + passos.filter((x) => x.startsWith('PASS')).length + '/' + passos.length);
+  await b.close();
+})().catch((e) => { console.log(passos.join('\n')); console.log('ERRO:', e.message.split('\n')[0]); process.exit(1); });

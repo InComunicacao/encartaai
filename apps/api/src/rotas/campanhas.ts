@@ -21,7 +21,28 @@ interface ItemEntrada {
   escala_nome?: number | null; escala_preco?: number | null;
   combo?: { preco_fora?: string; rotulo_fora?: string; qtd?: number; preco?: string; unit?: string; rotulo?: string; rotulo_unit?: string } | null;
 }
-interface Tema { grade: string; estilo: string; politica: string; fundo_id: string | null }
+interface BlocoRodape { texto: string; tamanho: number; negrito: boolean; alinhar: string; oculto: boolean }
+interface RodapeTema { transparente: boolean; cor_fundo: string | null; cor_texto: string | null; cor_barras: string | null;
+  personagem_id: string | null; blocos: BlocoRodape[] }
+interface Tema { grade: string; estilo: string; politica: string; fundo_id: string | null; rodape?: RodapeTema }
+const HEX = /^#[0-9a-f]{6}$/i;
+const ALINHAR = new Set(['esquerda', 'centro', 'direita']);
+const MAX_BLOCOS = 8;
+
+// Rodapé da campanha: só o que o motor desenha, com os números presos.
+function validarRodape(r: any): RodapeTema | string {
+  if (!r || typeof r !== 'object') return 'Rodapé inválido.';
+  const cor = (v: unknown) => typeof v === 'string' && HEX.test(v) ? v : null;
+  if (!Array.isArray(r.blocos) || r.blocos.length > MAX_BLOCOS) return `Rodapé: até ${MAX_BLOCOS} blocos de texto.`;
+  return {
+    transparente: r.transparente === true, cor_fundo: cor(r.cor_fundo), cor_texto: cor(r.cor_texto), cor_barras: cor(r.cor_barras),
+    personagem_id: idOuNulo(r.personagem_id),
+    blocos: r.blocos.map((b: any) => ({
+      texto: texto(b?.texto, 600), tamanho: Math.min(3, Math.max(0.3, Number(b?.tamanho) || 1)), negrito: b?.negrito === true,
+      alinhar: ALINHAR.has(b?.alinhar) ? b.alinhar : 'centro', oculto: b?.oculto === true,
+    })),
+  };
+}
 
 const texto = (v: unknown, max: number) => typeof v === 'string' ? v.slice(0, max) : '';
 const idOuNulo = (v: unknown) => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v) ? v : null;
@@ -34,6 +55,7 @@ export function validarTema(t: any): Tema | string {
   if (!GRADES.has(tema.grade)) return 'Grade inválida.';
   if (!ESTILOS.has(tema.estilo)) return 'Estilo de caixa inválido.';
   if (!POLITICAS.has(tema.politica)) return 'Política de texto inválida.';
+  if (t?.rodape != null) { const r = validarRodape(t.rodape); if (typeof r === 'string') return r; tema.rodape = r; }
   return tema;
 }
 
