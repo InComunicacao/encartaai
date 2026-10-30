@@ -3,6 +3,7 @@ import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import { api, quandoPerderSessao, type Eu } from './api';
 import { Modal } from './componentes/Modal';
 import { Entrar } from './paginas/Entrar';
+import { Configurar } from './paginas/Configurar';
 import { Clientes } from './paginas/admin/Clientes';
 import { ClienteDetalhe } from './paginas/admin/ClienteDetalhe';
 import { BancoGlobal } from './paginas/admin/BancoGlobal';
@@ -52,6 +53,7 @@ export function App() {
       )}
       <Routes>
         <Route path="/entrar" element={eu ? <Navigate to="/" replace /> : <Entrar />} />
+        <Route path="/configurar" element={<Configurar />} />
         <Route path="/*" element={eu ? <Casca /> : <Navigate to="/entrar" replace />} />
       </Routes>
     </Ctx.Provider>

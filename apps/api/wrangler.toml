@@ -1,4 +1,4 @@
-name = "encartaai-api"
+name = "encartaai"
 main = "src/index.ts"
 compatibility_date = "2026-08-01"
 compatibility_flags = ["nodejs_compat"]
@@ -8,7 +8,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "encartaai"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "520a2bf8-c95d-486c-85d2-b3a75a6f9e34"
 migrations_dir = "migrations"
 
 # SETUP_TOKEN é secret: wrangler secret put SETUP_TOKEN
