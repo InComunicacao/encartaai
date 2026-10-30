@@ -99,3 +99,35 @@ describe('rodapé da campanha', () => {
     expect((await req('PUT', '/campanhas/' + id, { tema: { rodape: { blocos } } }, S.A)).status).toBe(400);
   });
 });
+
+describe('camadas e logo', () => {
+  it('guarda imagens soltas presas ou não a um produto, e o ajuste da logo', async () => {
+    const id = (await req('POST', '/campanhas', { nome: 'Camadas' }, S.A)).json.id;
+    const a = '11111111-2222-4333-8444-555555555555';
+    const r = await req('PUT', '/campanhas/' + id, { tema: { grade: '9', logo: { escala: 9, dx: 0.1, dy: 0 }, camadas: [
+      { id: 'c1', asset_id: a, x: 0.3, y: 0.4, w: 0.2, rot: 15, atras: true },
+      { id: 'c2', asset_id: a, x: 9, y: 0.5, w: 0.5, ancora: 2, extra: 'x' },
+      { id: 'c3', asset_id: a, ancora: 999 }] } }, S.A);
+    expect(r.status).toBe(200);
+    const t = (await req('GET', '/campanhas/' + id, undefined, S.A)).json.campanha.tema;
+    expect(t.logo).toEqual({ escala: 3, dx: 0.1, dy: 0 });
+    expect(t.camadas).toHaveLength(3);
+    expect(t.camadas[0]).toMatchObject({ id: 'c1', atras: true, rot: 15, ancora: null });
+    expect(t.camadas[1]).toMatchObject({ x: 1.5, ancora: 2 }); expect(t.camadas[1]).not.toHaveProperty('extra');
+    expect(t.camadas[2].ancora).toBeNull();
+  });
+  it('recusa camada sem arquivo', async () => {
+    const id = (await req('POST', '/campanhas', { nome: 'C2' }, S.A)).json.id;
+    expect((await req('PUT', '/campanhas/' + id, { tema: { camadas: [{ x: 0.5 }] } }, S.A)).status).toBe(400);
+  });
+});
+
+describe('tamanhos e cores gerais', () => {
+  it('guarda escalas presas e só cores válidas', async () => {
+    const id = (await req('POST', '/campanhas', { nome: 'Cores' }, S.A)).json.id;
+    await req('PUT', '/campanhas/' + id, { tema: { escala_nome: 2, escala_preco: 0.8, cores: { caixa_preco: '#0057b8', texto_preco: 'azul', inventada: '#000000' } } }, S.A);
+    const t = (await req('GET', '/campanhas/' + id, undefined, S.A)).json.campanha.tema;
+    expect(t).toMatchObject({ escala_nome: 1.5, escala_preco: 0.8, cores: { caixa_preco: '#0057b8' } });
+    expect(t.cores).not.toHaveProperty('texto_preco'); expect(t.cores).not.toHaveProperty('inventada');
+  });
+});

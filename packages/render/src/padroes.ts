@@ -7,6 +7,10 @@ export const ENCARTE_VERTICAL: Formato = {
   logo: medidas.logo, rodape: medidas.rodape,
 };
 
+// Feed do Instagram (4:5): as mesmas frações do encarte num quadro mais
+// baixo — as caixas seguem a largura do card, as fotos ocupam o que sobra.
+export const FEED: Formato = { ...ENCARTE_VERTICAL, id: 'feed_1080x1350', nome: 'Feed 1080×1350', h: 1350 };
+
 export const GRADES: Record<string, Grade> = Object.fromEntries(
   Object.entries(medidas.grades).map(([k, g]) => [k, g as Grade]));
 

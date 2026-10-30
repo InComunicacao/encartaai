@@ -14,6 +14,7 @@ import { maiorQueCabe } from './autofit';
 import { ENCARTE_VERTICAL, GRADES } from './padroes';
 import type { EstiloCaixa } from './estilos';
 import type { Rodape } from './rodape';
+import type { Camada } from './camadas';
 import type { Ctx2D, Imagem, Item, Kit, PoliticaTexto, Retangulo } from './tipos';
 
 export const VIDEO_FPS = 30;
@@ -119,6 +120,8 @@ export interface CenaVideo {
   corFundo?: string;
   logo?: Imagem | null;
   rodape?: Rodape | null;           // o rodapé da campanha, quando o fundo é o encarte
+  camadas?: Camada[];               // imagens soltas do encarte (as presas a produto ficam de fora)
+  logoAjuste?: { escala: number; dx: number; dy: number } | null;
   durProduto?: number;
   animacao?: AnimacaoVideo;
 }
@@ -163,7 +166,8 @@ export function desenharQuadroVideo(ctx: Ctx2D, c: CenaVideo, t: number) {
     enc = { e, ox: (cena.w - E.w * e) / 2, oy: (cena.h - E.h * e) / 2 };
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, cena.w, cena.h); ctx.clip();
     ctx.translate(enc.ox, enc.oy);
-    desenharEncarte(ctx, { formato: E, grade: G1, estilo: c.estilo, kit: c.kit, itens: [], fundo: c.fundoImagem, logo: c.logo, rodape: c.rodape }, e);
+    desenharEncarte(ctx, { formato: E, grade: G1, estilo: c.estilo, kit: c.kit, itens: [], fundo: c.fundoImagem, logo: c.logo, rodape: c.rodape,
+      camadas: (c.camadas || []).filter((x) => x.ancora == null), logoAjuste: c.logoAjuste }, e);
     ctx.restore();
   } else if (c.fundo === 'arte' && c.fundoImagem) {
     desenharCobrindo(ctx, c.fundoImagem, { x: 0, y: 0, w: cena.w, h: cena.h });

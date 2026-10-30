@@ -2,15 +2,21 @@
 // desenhado pelo MESMO motor que gera o PNG final — o que se vê é o que sai.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ENCARTE_VERTICAL, ESTILOS, GRADES, desenharEncarte, unitarioCombo, type Ctx2D, type PoliticaTexto } from '@encartaai/render';
+import { ENCARTE_VERTICAL, ESTILOS, FEED, GRADES, areaProdutoSozinho, desenharEncarte, desenharProdutoSozinho, unitarioCombo, type Ctx2D, type Encarte, type Formato, type PoliticaTexto } from '@encartaai/render';
 import { api, ErroApi, urlArquivo, type Asset } from '../api';
 import { useSessao } from '../App';
 import { Aviso, Modal } from '../componentes/Modal';
 import { carregarFonte, carregarImagem, itemDoMotor, kitDoCliente, lerLista, rodapeDoMotor, rodapePadrao, type ItemCampanha, type KitApi, type RodapeApi } from '../render-web';
 import { PainelRodape } from '../componentes/PainelRodape';
+import { EscolherImagem, PainelCamadas, novaCamada, type CamadaApi, type LogoApi } from '../componentes/PainelCamadas';
+import { Palco } from '../componentes/Palco';
 
 interface ItemEd extends ItemCampanha { candidatos?: { id: string; nome: string; foto_id: string | null; pontuacao: number }[] }
-interface Tema { grade: string; estilo: string; politica: PoliticaTexto; fundo_id: string | null; rodape?: RodapeApi }
+interface Tema { grade: string; estilo: string; politica: PoliticaTexto; fundo_id: string | null; rodape?: RodapeApi; camadas?: CamadaApi[]; logo?: LogoApi | null;
+  escala_nome?: number; escala_preco?: number; cores?: Partial<Record<CorTema, string>> }
+type CorTema = 'caixa_preco' | 'texto_preco' | 'caixa_descricao' | 'texto_descricao' | 'banner_fundo' | 'banner_texto';
+const NOMES_COR: [CorTema, string][] = [['caixa_preco', 'Caixa do preço'], ['texto_preco', 'Número do preço'], ['banner_fundo', 'Faixa do app'],
+  ['banner_texto', 'Texto da faixa'], ['caixa_descricao', 'Caixa do nome'], ['texto_descricao', 'Texto do nome']];
 interface Camp { id: string; nome: string; loja_id: string | null; validade_de: string | null; validade_ate: string | null; tema: Tema; itens: ItemEd[]; atualizado_em: number }
 interface Loja { id: string; nome: string; logo_asset_id: string | null; rodape_texto: string | null }
 
@@ -32,7 +38,11 @@ export function Editor() {
   const [sel, setSel] = useState<number | null>(null);
   const [selos, setSelos] = useState<Asset[]>([]);
   const [personagens, setPersonagens] = useState<Asset[]>([]);
-  const [aba, setAba] = useState<'produtos' | 'rodape'>('produtos');
+  const [aba, setAba] = useState<'produtos' | 'rodape' | 'camadas'>('produtos');
+  const [selCamada, setSelCamada] = useState<string | null>(null);
+  const [escolherImagem, setEscolherImagem] = useState<{ ancora: number | null; tipo: string } | null>(null);
+  const [proporcoes, setProporcoes] = useState<Record<string, number>>({});
+  const [nomes, setNomes] = useState<Record<string, string>>({});
   const [erro, setErro] = useState('');
   const versao = useRef(0);
   const sujo = useRef(false);
@@ -70,9 +80,85 @@ export function Editor() {
     const t = setTimeout(() => salvar(camp), 1200);
     return () => clearTimeout(t);
   }, [camp, salvar]);
-  const mudar = (f: (c: Camp) => Camp) => { sujo.current = true; setCamp((c) => c && f(c)); };
+  // ── desfazer / refazer ── mudanças em sequência rápida (um arrasto) viram um passo só
+  const campRef = useRef<Camp | null>(null);
+  campRef.current = camp;
+  const passado = useRef<Camp[]>([]), futuro = useRef<Camp[]>([]), ultimo = useRef(0);
+  const [, setHist] = useState(0);
+  const mudar = (f: (c: Camp) => Camp) => {
+    const atual = campRef.current; if (!atual) return;
+    const agora = Date.now();
+    if (agora - ultimo.current > 400) { passado.current.push(atual); if (passado.current.length > 100) passado.current.shift(); }
+    ultimo.current = agora; futuro.current = [];
+    const novo = f(atual); campRef.current = novo; sujo.current = true; setCamp(novo); setHist((h) => h + 1);
+  };
+  const viajar = (de: React.MutableRefObject<Camp[]>, para: React.MutableRefObject<Camp[]>) => {
+    const atual = campRef.current, alvo = de.current.pop();
+    if (!atual || !alvo) return;
+    para.current.push(atual); ultimo.current = 0;
+    // a versão no servidor é a do último save, não a da foto do histórico
+    const novo = { ...alvo, atualizado_em: atual.atualizado_em };
+    campRef.current = novo; sujo.current = true; setCamp(novo); setHist((h) => h + 1);
+  };
+  const desfazer = () => viajar(passado, futuro), refazer = () => viajar(futuro, passado);
+  useEffect(() => {
+    const t = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || (e.target as HTMLElement).closest('input,textarea,[contenteditable]')) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) { e.preventDefault(); desfazer(); }
+      else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); refazer(); }
+    };
+    window.addEventListener('keydown', t); return () => window.removeEventListener('keydown', t);
+  });
   const mudarItem = (i: number, campo: keyof ItemEd, v: unknown) => mudar((c) => ({ ...c, itens: c.itens.map((x, j) => j === i ? { ...x, [campo]: v } : x) }));
   const mudarTema = (t: Partial<Tema>) => mudar((c) => ({ ...c, tema: { ...c.tema, ...t } }));
+
+  // ── camadas ──
+  const camadas = camp?.tema.camadas || [];
+  const mudarCamadas = (cs: CamadaApi[]) => mudarTema({ camadas: cs });
+  const mudarCamada = (id: string, d: Partial<CamadaApi>) => mudarTema({ camadas: (camp?.tema.camadas || []).map((c) => c.id === id ? { ...c, ...d } : c) });
+  function adicionarImagem(a: Asset) {
+    setNomes((n) => ({ ...n, [a.id]: a.nome }));
+    const alvo = escolherImagem;
+    setEscolherImagem(null);
+    const c = alvo?.ancora != null ? novaCamada(a.id, { ancora: alvo.ancora, x: 0.68, y: 0.42, w: 0.5 }) : novaCamada(a.id);
+    mudarCamadas([...camadas, c]); setSelCamada(c.id);
+    if (alvo?.ancora == null) setAba('camadas');
+  }
+  // a segunda foto do produto: a mesma, presa ao card, ao lado da original
+  function duplicarFoto(i: number) {
+    const f = camp?.itens[i]?.foto_id; if (!f) return;
+    const c = novaCamada(f, { ancora: i, x: 0.68, y: 0.42, w: 0.5 });
+    mudarCamadas([...camadas, c]); setSelCamada(c.id);
+  }
+  function removerItem(i: number) {
+    setSel(null); setSelCamada(null);
+    mudar((c) => ({ ...c, itens: c.itens.filter((_, j) => j !== i), tema: { ...c.tema, camadas: (c.tema.camadas || [])
+      .filter((x) => x.ancora !== i).map((x) => x.ancora != null && x.ancora > i ? { ...x, ancora: x.ancora - 1 } : x) } }));
+  }
+  useEffect(() => {
+    if (!selCamada) return;
+    const tecla = (e: KeyboardEvent) => {
+      const alvo = e.target as HTMLElement;
+      if (alvo.closest('input,textarea,select,[contenteditable]')) return;
+      const passo = e.shiftKey ? 0.02 : 0.004;
+      const c = camadas.find((x) => x.id === selCamada); if (!c) return;
+      const d: Record<string, Partial<CamadaApi>> = { ArrowLeft: { x: c.x - passo }, ArrowRight: { x: c.x + passo }, ArrowUp: { y: c.y - passo }, ArrowDown: { y: c.y + passo } };
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); mudarCamadas(camadas.filter((x) => x.id !== selCamada)); setSelCamada(null); }
+      else if (d[e.key]) { e.preventDefault(); mudarCamada(selCamada, d[e.key]); }
+      else if (e.key === 'Escape') setSelCamada(null);
+    };
+    window.addEventListener('keydown', tecla);
+    return () => window.removeEventListener('keydown', tecla);
+  });
+  // nomes das imagens soltas (para a lista de camadas)
+  useEffect(() => {
+    const faltam = [...new Set(camadas.map((c) => c.asset_id))].filter((x) => !nomes[x]);
+    if (!faltam.length) return;
+    Promise.all(['selo', 'personagem', 'produto', 'tema', 'fundo', 'logo'].map((t) => api.get<{ assets: Asset[] }>('/assets?tipo=' + t + '&limite=500').catch(() => ({ assets: [] as Asset[] }))))
+      .then((rs) => setNomes((n) => ({ ...n, ...Object.fromEntries(rs.flatMap((r) => r.assets).map((a) => [a.id, a.nome])) })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camadas.length]);
 
   // ── colar lista ──
   async function aplicarLista(texto: string, substituir: boolean) {
@@ -96,20 +182,38 @@ export function Editor() {
 
   // ── desenho ──
   const tela = useRef<HTMLCanvasElement>(null);
-  const desenhar = useCallback(async (canvas: HTMLCanvasElement, c: Camp, escala: number) => {
-    const { kit, fontes } = kitDoCliente(kitApi);
+  const montar = useCallback(async (c: Camp): Promise<Encarte> => {
+    const { kit: kitBase, fontes } = kitDoCliente(kitApi);
+    const cc = c.tema.cores || {};
+    const kit = { ...kitBase, cores: { ...kitBase.cores, ...(cc.caixa_preco ? { caixa_preco: cc.caixa_preco } : {}), ...(cc.texto_preco ? { texto_preco: cc.texto_preco } : {}),
+      ...(cc.caixa_descricao ? { caixa_descricao: cc.caixa_descricao } : {}), ...(cc.texto_descricao ? { texto_nome: cc.texto_descricao, texto_descricao: cc.texto_descricao } : {}),
+      ...(cc.banner_fundo ? { banner_fundo: cc.banner_fundo } : {}), ...(cc.banner_texto ? { banner_texto: cc.banner_texto } : {}) } };
     const grade = GRADES[c.tema.grade];
     const usados = c.itens.slice(0, grade.celulas.length);
     const loja = lojas.find((l) => l.id === c.loja_id);
     const [fundo, logo, itens, rodape] = await Promise.all([carregarImagem(c.tema.fundo_id), carregarImagem(loja?.logo_asset_id),
-      Promise.all(usados.map(itemDoMotor)),
+      Promise.all(usados.map(async (i) => {
+        const m = await itemDoMotor(i);   // tamanho geral × ajuste do produto
+        return { ...m, escalaNome: (m.escalaNome ?? 1) * (c.tema.escala_nome ?? 1), escalaPreco: (m.escalaPreco ?? 1) * (c.tema.escala_preco ?? 1) };
+      })),
       rodapeDoMotor(c.tema.rodape ?? rodapePadrao(kitApi), { de: c.validade_de, ate: c.validade_ate, loja: loja?.nome, lojaTexto: loja?.rodape_texto }),
       ...fontes.map(carregarFonte)]);
+    const cams = c.tema.camadas || [];
+    const imgs = await Promise.all(cams.map((x) => carregarImagem(x.asset_id)));
+    const novas: Record<string, number> = {};
+    imgs.forEach((im, k) => { if (im && im.width && proporcoes[cams[k].asset_id] === undefined) novas[cams[k].asset_id] = im.height / im.width; });
+    if (Object.keys(novas).length) setProporcoes((x) => ({ ...x, ...novas }));
+    const camadas = cams.map((x, k) => ({ ...x, imagem: imgs[k] as any }));
+    return { formato: ENCARTE_VERTICAL, grade, estilo: ESTILOS[c.tema.estilo], kit, itens, fundo: fundo as any, logo: logo as any,
+      politica: c.tema.politica, rodape, camadas, logoAjuste: c.tema.logo };
+  }, [kitApi, lojas, proporcoes]);
+  const desenhar = useCallback(async (canvas: HTMLCanvasElement, c: Camp, escala: number, mudar?: Partial<Encarte>) => {
+    const e = { ...(await montar(c)), ...mudar };
     const ctx = canvas.getContext('2d') as unknown as Ctx2D;
     ctx.save(); (ctx as any).setTransform(1, 0, 0, 1, 0, 0);
-    desenharEncarte(ctx, { formato: ENCARTE_VERTICAL, grade, estilo: ESTILOS[c.tema.estilo], kit, itens, fundo: fundo as any, logo: logo as any, politica: c.tema.politica, rodape }, escala);
+    desenharEncarte(ctx, e, escala);
     ctx.restore();
-  }, [kitApi, lojas]);
+  }, [montar]);
   useEffect(() => {
     if (!camp || !tela.current) return;
     let vivo = true;
@@ -118,23 +222,57 @@ export function Editor() {
       const off = document.createElement('canvas'); off.width = cv.width; off.height = cv.height;
       await desenhar(off, camp, cv.width / ENCARTE_VERTICAL.w);
       if (vivo) cv.getContext('2d')!.drawImage(off, 0, 0);   // troca de uma vez: sem piscar
-    }, 120);
+    }, 16);
     return () => { vivo = false; clearTimeout(t); };
   }, [camp, desenhar]);
 
-  async function exportar() {
+  const [menuExportar, setMenuExportar] = useState(false);
+  const baixar = (blob: Blob, nome: string) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = nome;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+  const png = (cv: HTMLCanvasElement) => new Promise<Blob>((ok) => cv.toBlob((b) => ok(b!), 'image/png'));
+  const nomeBase = () => (camp?.nome || 'encarte').replace(/[\\/:*?"<>|]+/g, '-');
+  // tipo: 'png' (1080×1920), 'png2x', 'feed', 'transparente', 'produto'
+  async function exportar(tipo: 'png' | 'png2x' | 'feed' | 'transparente' | 'produto' = 'png') {
     if (!camp) return;
-    setErro('');
+    setErro(''); setMenuExportar(false);
     try {
       await api.post('/exportacoes/encarte');
-      const cv = document.createElement('canvas'); cv.width = ENCARTE_VERTICAL.w; cv.height = ENCARTE_VERTICAL.h;
-      await desenhar(cv, camp, 1);
-      const blob: Blob = await new Promise((ok) => cv.toBlob((b) => ok(b!), 'image/png'));
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob); a.download = (camp.nome || 'encarte').replace(/[\\/:*?"<>|]+/g, '-') + '.png';
-      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      if (tipo === 'produto') {
+        if (sel == null || !camp.itens[sel]) { setErro('Selecione um produto (clique nele no encarte) para exportar só ele.'); return; }
+        const e = await montar(camp), a = areaProdutoSozinho(e, sel), k = 2;
+        const cv = document.createElement('canvas'); cv.width = Math.ceil(a.w * k); cv.height = Math.ceil(a.h * k);
+        desenharProdutoSozinho(cv.getContext('2d') as unknown as Ctx2D, e, sel, k);
+        return baixar(await png(cv), `${nomeBase()} - ${(camp.itens[sel].nome || 'produto ' + (sel + 1)).replace(/[\\/:*?"<>|]+/g, '-')}.png`);
+      }
+      const formato: Formato = tipo === 'feed' ? FEED : ENCARTE_VERTICAL, k = tipo === 'png2x' ? 2 : 1;
+      const cv = document.createElement('canvas'); cv.width = formato.w * k; cv.height = formato.h * k;
+      await desenhar(cv, camp, k, { formato, ...(tipo === 'transparente' ? { somenteProdutos: true } : {}) });
+      const sufixo = { png: '', png2x: ' (2x)', feed: ' - feed', transparente: ' - transparente' }[tipo];
+      baixar(await png(cv), nomeBase() + sufixo + '.png');
     } catch (x) { setErro(x instanceof ErroApi ? x.message : 'Não foi possível exportar.'); }
   }
+
+  // ── modelo: o visual da campanha (tema) num arquivo, para reaproveitar ──
+  function exportarModelo() {
+    if (!camp) return;
+    setMenuExportar(false);
+    baixar(new Blob([JSON.stringify({ encartaai_modelo: 1, nome: camp.nome, tema: camp.tema }, null, 2)], { type: 'application/json' }), nomeBase() + ' - modelo.json');
+  }
+  async function importarModelo(f?: File) {
+    if (!f) return;
+    try {
+      const m = JSON.parse(await f.text());
+      if (!m || m.encartaai_modelo !== 1 || typeof m.tema !== 'object') throw new Error();
+      mudar((c) => ({ ...c, tema: { ...c.tema, ...m.tema } }));
+    } catch { setErro('Este arquivo não é um modelo da EncartaAi.'); }
+  }
+
+  // ── zoom da prévia ──
+  const [zoom, setZoom] = useState(1);
+  const zoomPara = (z: number) => setZoom(Math.round(Math.min(3, Math.max(0.5, z)) * 100) / 100);
 
   if (!camp) return <p>Carregando…</p>;
   const capacidade = GRADES[camp.tema.grade].celulas.length;
@@ -149,7 +287,27 @@ export function Editor() {
             onChange={(e) => mudar((c) => ({ ...c, nome: e.target.value }))} />
           <p className={'sub' + (estado.tipo === 'erro' ? ' texto-erro' : '')} role="status" style={{ marginBottom: 0 }}>{estado.texto || 'Tudo salvo'}</p>
         </div>
-        <button className="primario" onClick={exportar}>Exportar PNG</button>
+        <div className="linha">
+          <button aria-label="Desfazer" title="Desfazer (Ctrl+Z)" disabled={!passado.current.length} onClick={desfazer}>↶</button>
+          <button aria-label="Refazer" title="Refazer (Ctrl+Shift+Z)" disabled={!futuro.current.length} onClick={refazer}>↷</button>
+          <div className="menu-exportar">
+            <button className="primario" onClick={() => exportar('png')}>Exportar PNG</button>
+            <button className="primario seta" aria-label="Mais formatos" aria-expanded={menuExportar} onClick={() => setMenuExportar((v) => !v)}>▾</button>
+            {menuExportar && (
+              <div className="menu" role="menu">
+                <button role="menuitem" onClick={() => exportar('png')}>PNG 1080×1920</button>
+                <button role="menuitem" onClick={() => exportar('png2x')}>PNG em alta (2160×3840)</button>
+                <button role="menuitem" onClick={() => exportar('feed')}>Feed do Instagram (1080×1350)</button>
+                <button role="menuitem" onClick={() => exportar('transparente')}>Só os produtos (fundo transparente)</button>
+                <button role="menuitem" onClick={() => exportar('produto')} disabled={sel == null}>Só o produto selecionado{sel != null ? ` (${sel + 1})` : ''}</button>
+                <hr />
+                <button role="menuitem" onClick={exportarModelo}>Salvar modelo (.json)</button>
+                {!operador && <label className="botao" role="menuitem">Usar modelo…<input type="file" accept=".json,application/json" hidden aria-label="Importar modelo"
+                  onChange={(e) => { setMenuExportar(false); importarModelo(e.target.files?.[0]); e.target.value = ''; }} /></label>}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
       <Aviso>{erro}</Aviso>
 
@@ -167,6 +325,27 @@ export function Editor() {
                 <label>Tamanho do texto<select value={camp.tema.politica} onChange={(e) => mudarTema({ politica: e.target.value as PoliticaTexto })}>
                   <option value="maior">Maior possível</option><option value="medio">Médio</option><option value="minimo">Mínimo</option></select></label>
               </div>
+              <details className="mais-opcoes">
+                <summary>Tamanhos e cores do preço</summary>
+                <div className="linha" style={{ margin: '8px 0' }}>
+                  <span>Nomes</span>
+                  <button aria-label="Diminuir todos os nomes" onClick={() => mudarTema({ escala_nome: Math.max(0.5, +((camp.tema.escala_nome ?? 1) - 0.05).toFixed(2)) })}>−</button>
+                  <span className="valor">{Math.round((camp.tema.escala_nome ?? 1) * 100)}%</span>
+                  <button aria-label="Aumentar todos os nomes" onClick={() => mudarTema({ escala_nome: Math.min(1.5, +((camp.tema.escala_nome ?? 1) + 0.05).toFixed(2)) })}>+</button>
+                  <span style={{ marginLeft: 12 }}>Preços</span>
+                  <button aria-label="Diminuir todos os preços" onClick={() => mudarTema({ escala_preco: Math.max(0.5, +((camp.tema.escala_preco ?? 1) - 0.05).toFixed(2)) })}>−</button>
+                  <span className="valor">{Math.round((camp.tema.escala_preco ?? 1) * 100)}%</span>
+                  <button aria-label="Aumentar todos os preços" onClick={() => mudarTema({ escala_preco: Math.min(1.5, +((camp.tema.escala_preco ?? 1) + 0.05).toFixed(2)) })}>+</button>
+                </div>
+                <div className="cores-rodape">
+                  {NOMES_COR.map(([k, nome]) => (
+                    <div key={k} className="cor-rodape"><span>{nome}</span>
+                      <span className="linha"><input type="color" aria-label={'Cor: ' + nome} value={camp.tema.cores?.[k] || '#ffffff'}
+                        onChange={(e) => mudarTema({ cores: { ...camp.tema.cores, [k]: e.target.value } })} />
+                        {camp.tema.cores?.[k] ? <button className="discreto" onClick={() => { const n = { ...camp.tema.cores }; delete n[k]; mudarTema({ cores: n }); }}>kit</button>
+                          : <span className="sub" style={{ margin: 0 }}>do kit</span>}</span></div>))}
+                </div>
+              </details>
               <label style={{ marginBottom: 0 }}>Fundo / tema
                 <select value={camp.tema.fundo_id || ''} onChange={(e) => mudarTema({ fundo_id: e.target.value || null })}>
                   <option value="">Branco</option>{fundos.map((f) => <option key={f.id} value={f.id}>{f.nome}{f.global ? ' (EncartaAi)' : ''}</option>)}</select></label>
@@ -177,15 +356,22 @@ export function Editor() {
             <div className="abas" role="tablist">
               <button role="tab" aria-selected={aba === 'produtos'} className={aba === 'produtos' ? 'ativa' : ''} onClick={() => setAba('produtos')}>Produtos</button>
               <button role="tab" aria-selected={aba === 'rodape'} className={aba === 'rodape' ? 'ativa' : ''} onClick={() => setAba('rodape')}>Rodapé</button>
+              <button role="tab" aria-selected={aba === 'camadas'} className={aba === 'camadas' ? 'ativa' : ''} onClick={() => setAba('camadas')}>Camadas e logo</button>
             </div>
           )}
           {aba === 'rodape' && !operador && <PainelRodape rodape={camp.tema.rodape ?? rodapePadrao(kitApi)} personagens={personagens}
             validade={{ de: camp.validade_de, ate: camp.validade_ate }} temLojaTexto={!!lojas.find((l) => l.id === camp.loja_id)?.rodape_texto}
             aoMudar={(r) => mudarTema({ rodape: r })} aoValidade={(v) => mudar((c) => ({ ...c, validade_de: v.de, validade_ate: v.ate }))}
             aoRestaurar={() => mudarTema({ rodape: undefined })} />}
+          {aba === 'camadas' && !operador && <PainelCamadas camadas={camadas} logo={camp.tema.logo ?? null}
+            temLogo={!!lojas.find((l) => l.id === camp.loja_id)?.logo_asset_id} nomes={nomes}
+            nomeProduto={(i) => camp.itens[i]?.nome || ''} selecionada={selCamada} aoSelecionar={setSelCamada}
+            aoMudar={mudarCamadas} aoLogo={(l) => mudarTema({ logo: l })} aoAdicionar={() => setEscolherImagem({ ancora: null, tipo: 'selo' })} />}
           {aba === 'produtos' && <>
           {sel !== null && camp.itens[sel] && <AjustesItem n={sel} item={camp.itens[sel]} selos={selos} aoFechar={() => setSel(null)}
-            aoMudar={(campo, v) => mudarItem(sel, campo, v)} aoFoto={() => setFoto(sel)} />}
+            aoMudar={(campo, v) => mudarItem(sel, campo, v)} aoFoto={() => setFoto(sel)}
+            aoDuplicarFoto={() => duplicarFoto(sel)} aoOutraFoto={() => setEscolherImagem({ ancora: sel, tipo: 'produto' })}
+            extras={camadas.filter((c) => c.ancora === sel).length} />}
 
           <div className="cartao" style={{ padding: 0 }}>
             <div className="linha" style={{ padding: '12px 14px' }}>
@@ -215,7 +401,7 @@ export function Editor() {
                       <button className="discreto" aria-label="Ajustar" title="Ajustar foto, tamanhos e preço" onClick={() => setSel(i)}>⚙</button>
                       <button className="discreto" aria-label={it.oculto ? 'Mostrar' : 'Ocultar'} title={it.oculto ? 'Mostrar no encarte' : 'Ocultar do encarte (sem apagar)'}
                         onClick={() => mudarItem(i, 'oculto', !it.oculto)}>{it.oculto ? '🚫' : '👁'}</button>
-                      <button className="discreto perigo" aria-label="Remover" onClick={() => { setSel(null); mudar((c) => ({ ...c, itens: c.itens.filter((_, j) => j !== i) })); }}>×</button></td>
+                      <button className="discreto perigo" aria-label="Remover" onClick={() => removerItem(i)}>×</button></td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -225,10 +411,30 @@ export function Editor() {
         </div>
 
         <div className="previa">
-          <canvas ref={tela} width={540} height={960} aria-label="Prévia do encarte" />
+          <div className="barra-zoom">
+            <button aria-label="Diminuir zoom" onClick={() => zoomPara(zoom - 0.25)}>−</button>
+            <button className="discreto" onClick={() => zoomPara(1)} title="Ajustar à tela">{Math.round(zoom * 100)}%</button>
+            <button aria-label="Aumentar zoom" onClick={() => zoomPara(zoom + 0.25)}>+</button>
+            <span className="espaco" />
+            {sel != null && <span className="sub" style={{ margin: 0 }}>Produto {sel + 1} selecionado</span>}
+          </div>
+          <div className="area-zoom" onWheel={(e) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoomPara(zoom * (e.deltaY < 0 ? 1.1 : 0.9)); } }}>
+          <div style={{ width: zoom * 100 + '%' }}>
+          <Palco grade={GRADES[camp.tema.grade]} camadas={camadas} proporcao={(a) => proporcoes[a] ?? 1}
+            itemVisivel={(i) => !!camp.itens[i] && !camp.itens[i].oculto} fotoAjuste={(i) => camp.itens[i]?.foto_ajuste || { dx: 0, dy: 0, escala: 1 }}
+            selCamada={selCamada} selItem={aba === 'produtos' ? sel : null} editavel={!operador}
+            aoSelCamada={(id) => { setSelCamada(id); if (id && camadas.find((c) => c.id === id)?.ancora == null) setAba('camadas'); }}
+            aoSelItem={(i) => { setSel(i); if (i != null) setAba('produtos'); }}
+            aoMudarCamada={mudarCamada}
+            aoMoverFoto={(i, dx, dy) => mudarItem(i, 'foto_ajuste', { ...(camp.itens[i].foto_ajuste || { escala: 1 }), dx, dy })}>
+            <canvas ref={tela} width={1080} height={1920} aria-label="Prévia do encarte" />
+          </Palco>
+          </div></div>
         </div>
       </div>
 
+      {escolherImagem && <EscolherImagem titulo={escolherImagem.ancora != null ? 'Outra foto no produto ' + (escolherImagem.ancora + 1) : 'Imagem solta'}
+        tipoInicial={escolherImagem.tipo} aoFechar={() => setEscolherImagem(null)} aoEscolher={adicionarImagem} />}
       {colar && <ColarLista aoFechar={() => setColar(false)} aoAplicar={aplicarLista} temItens={camp.itens.length > 0} />}
       {foto !== null && <EscolherFoto item={camp.itens[foto]} podeEnviar={!operador} aoFechar={() => setFoto(null)}
         aoEscolher={(a, produtoId) => { mudar((c) => ({ ...c, itens: c.itens.map((x, j) => j === foto ? { ...x, foto_id: a ? a.id : null,
@@ -304,8 +510,8 @@ function EscolherFoto({ item, podeEnviar, aoFechar, aoEscolher }: { item: ItemEd
 }
 
 // Ajustes de um produto: foto, tamanhos, tipo de preço, selo.
-function AjustesItem({ n, item, selos, aoFechar, aoMudar, aoFoto }: { n: number; item: ItemEd; selos: Asset[]; aoFechar: () => void;
-  aoMudar: (campo: keyof ItemEd, v: unknown) => void; aoFoto: () => void }) {
+function AjustesItem({ n, item, selos, aoFechar, aoMudar, aoFoto, aoDuplicarFoto, aoOutraFoto, extras }: { n: number; item: ItemEd; selos: Asset[]; aoFechar: () => void;
+  aoMudar: (campo: keyof ItemEd, v: unknown) => void; aoFoto: () => void; aoDuplicarFoto: () => void; aoOutraFoto: () => void; extras: number }) {
   const a = item.foto_ajuste || { dx: 0, dy: 0, escala: 1 };
   const ajustarFoto = (d: Partial<typeof a>) => aoMudar('foto_ajuste', { ...a, ...d });
   const passo = (campo: 'escala_nome' | 'escala_preco', d: number) =>
@@ -333,6 +539,11 @@ function AjustesItem({ n, item, selos, aoFechar, aoMudar, aoFoto }: { n: number;
             <button aria-label="Foto para a direita" onClick={() => ajustarFoto({ dx: +(a.dx + 0.03).toFixed(2) })}>→</button>
             <button className="discreto" onClick={() => aoMudar('foto_ajuste', null)}>Restaurar</button>
           </div>
+          <div className="linha" style={{ marginTop: 6 }}>
+            <button disabled={!item.foto_id} onClick={aoDuplicarFoto} title="Uma segunda embalagem igual, ao lado">⧉ Duplicar foto</button>
+            <button onClick={aoOutraFoto} title="Outra imagem presa a este produto">+ Outra foto</button>
+          </div>
+          {extras > 0 && <p className="sub" style={{ margin: '4px 0 0' }}>{extras} foto(s) extra: arraste no encarte; ficam em Camadas.</p>}
         </div>
         <div>
           <div className="rotulo">Tamanho do nome</div>

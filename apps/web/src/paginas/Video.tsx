@@ -11,10 +11,12 @@ import { useSessao } from '../App';
 import { Aviso, Modal } from '../componentes/Modal';
 import { carregarFonte, carregarImagem, itemDoMotor, kitDoCliente, rodapeDoMotor, rodapePadrao, type ItemCampanha, type KitApi, type RodapeApi } from '../render-web';
 import { gravarMp4, podeGravarMp4 } from '../video/gravador';
+import type { CamadaApi, LogoApi } from '../componentes/PainelCamadas';
 
 type ItemC = ItemCampanha;
 interface Camp { id: string; nome: string; loja_id: string | null; validade_de: string | null; validade_ate: string | null;
-  tema: { estilo: string; politica: PoliticaTexto; fundo_id: string | null; rodape?: RodapeApi }; itens: ItemC[] }
+  tema: { estilo: string; politica: PoliticaTexto; fundo_id: string | null; rodape?: RodapeApi; camadas?: CamadaApi[]; logo?: LogoApi | null;
+    escala_nome?: number; escala_preco?: number; cores?: Record<string, string> }; itens: ItemC[] }
 interface Linha { id: string; nome: string; itens: number }
 interface Loja { id: string; nome: string; logo_asset_id: string | null; rodape_texto: string | null }
 export interface FormatoApi { id: string; nome: string; w: number; h: number; rotacao: 0 | 90 | -90; layout: 'card' | 'faixa' | null;
@@ -88,15 +90,22 @@ export function Video() {
     if (!camp) { setCena(null); return; }
     let vivo = true;
     (async () => {
-      const { kit, fontes } = kitDoCliente(kitApi);
+      const { kit: kitBase, fontes } = kitDoCliente(kitApi);
+      const cc = camp.tema.cores || {};   // cores do preço escolhidas na campanha
+      const kit = { ...kitBase, cores: { ...kitBase.cores, ...Object.fromEntries(Object.entries({ caixa_preco: cc.caixa_preco, texto_preco: cc.texto_preco,
+        caixa_descricao: cc.caixa_descricao, texto_nome: cc.texto_descricao, texto_descricao: cc.texto_descricao, banner_fundo: cc.banner_fundo,
+        banner_texto: cc.banner_texto }).filter(([, v]) => v)) } };
+      const soltas = (camp.tema.camadas || []).filter((c) => c.ancora == null && !c.oculto);
+      const imgSoltas = await Promise.all(soltas.map((c) => carregarImagem(c.asset_id)));
       const loja = lojas.find((l) => l.id === camp.loja_id), logoId = loja?.logo_asset_id;
       const rodape = await rodapeDoMotor(camp.tema.rodape ?? rodapePadrao(kitApi), { de: camp.validade_de, ate: camp.validade_ate, loja: loja?.nome, lojaTexto: loja?.rodape_texto });
       const fundoId = fundo === 'encarte' ? camp.tema.fundo_id : fundo === 'arte' ? arteId : null;
       const [img, logo, todos] = await Promise.all([carregarImagem(fundoId), carregarImagem(logoId),
         Promise.all(escolhidos.slice(0, limite).map(itemDoMotor)), ...fontes.map(carregarFonte)]);
-      const itens: Item[] = todos.map((i) => ({ ...i, oculto: false }));
+      const itens: Item[] = todos.map((i) => ({ ...i, oculto: false, escalaNome: (i.escalaNome ?? 1) * (camp.tema.escala_nome ?? 1), escalaPreco: (i.escalaPreco ?? 1) * (camp.tema.escala_preco ?? 1) }));
       if (vivo) setCena({ formato, kit, estilo: ESTILOS[camp.tema.estilo] || ESTILOS.etiqueta_vermelha, politica: camp.tema.politica, itens,
-        fundo, fundoImagem: img as any, corFundo: cor, logo: logo as any, rodape, durProduto: dur, animacao: anim });
+        fundo, fundoImagem: img as any, corFundo: cor, logo: logo as any, rodape, durProduto: dur, animacao: anim,
+        camadas: soltas.map((c, k) => ({ ...c, imagem: imgSoltas[k] as any })), logoAjuste: camp.tema.logo });
     })();
     return () => { vivo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps

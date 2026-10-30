@@ -2,6 +2,7 @@ import { maiorQueCabe } from './autofit';
 import { alturaDigitos, desenharPreco, fonteCss, medirPreco, separarPreco } from './preco';
 import type { EstiloCaixa } from './estilos';
 import { desenharRodape, type Rodape } from './rodape';
+import { caixaCamada, type Camada } from './camadas';
 import { FATOR_POLITICA, type Combo, type Ctx2D, type Formato, type Fonte, type Grade, type Imagem, type Item, type Kit, type PoliticaTexto, type Retangulo } from './tipos';
 
 const ALTURA_LINHA = 1.05;                  // em corpos
@@ -248,15 +249,36 @@ export interface Encarte {
   logo?: Imagem | null;
   politica?: PoliticaTexto;
   rodape?: Rodape | null;
+  camadas?: Camada[];
+  logoAjuste?: { escala: number; dx: number; dy: number } | null;   // dx, dy em fração do formato
+  somenteProdutos?: boolean;     // PNG transparente: sem fundo, logo e rodapé
+}
+
+function desenharCamada(ctx: Ctx2D, c: Camada, f: Formato, g: Grade) {
+  if (!c.imagem || c.oculto) return;
+  const k = caixaCamada(c, f, g);
+  ctx.save();
+  ctx.translate(k.cx, k.cy);
+  if (k.rot) ctx.rotate((k.rot * Math.PI) / 180);
+  ctx.drawImage(c.imagem, -k.w / 2, -k.h / 2, k.w, k.h);
+  ctx.restore();
 }
 
 export function desenharEncarte(ctx: Ctx2D, e: Encarte, escala = 1): ResultadoCard[] {
   const f = e.formato;
   ctx.save();
   ctx.scale(escala, escala);
-  if (e.fundo) desenharCobrindo(ctx, e.fundo, { x: 0, y: 0, w: f.w, h: f.h });
+  const so = !!e.somenteProdutos;
+  if (so) { /* transparente */ }
+  else if (e.fundo) desenharCobrindo(ctx, e.fundo, { x: 0, y: 0, w: f.w, h: f.h });
   else { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, f.w, f.h); }
-  if (e.logo) desenharContido(ctx, e.logo, px(f.logo, f));
+  // camada presa a um produto some com ele (fora da grade ou oculto)
+  const camadas = (e.camadas || []).filter((c) => c.ancora == null || (e.grade.celulas[c.ancora] && e.itens[c.ancora] && !e.itens[c.ancora].oculto));
+  for (const c of camadas) if (c.atras) desenharCamada(ctx, c, f, e.grade);
+  if (e.logo && !so) {
+    const r = px(f.logo, f), a = e.logoAjuste, k = a?.escala ?? 1;
+    desenharContido(ctx, e.logo, { x: r.x + r.w * (1 - k) / 2 + (a?.dx ?? 0) * f.w, y: r.y + r.h * (1 - k) / 2 + (a?.dy ?? 0) * f.h, w: r.w * k, h: r.h * k });
+  }
 
   const res = e.grade.celulas.map((c, i) => e.itens[i] && !e.itens[i].oculto
     ? desenharCard(ctx, px(c, f), e.itens[i], e.kit, e.grade, e.estilo, e.politica)
@@ -264,8 +286,29 @@ export function desenharEncarte(ctx: Ctx2D, e: Encarte, escala = 1): ResultadoCa
 
   // rodapé: o da campanha (blocos, personagem, cores) ou, sem ele, o
   // texto do kit numa faixa simples
-  desenharRodape(ctx, px(f.rodape, f), e.rodape ?? { blocos: [{ texto: e.kit.textos.rodape }] }, e.kit);
+  if (!so) desenharRodape(ctx, px(f.rodape, f), e.rodape ?? { blocos: [{ texto: e.kit.textos.rodape }] }, e.kit);
+  // frente de tudo: por cima dos produtos e do rodapé (personagens que "saem" da faixa)
+  for (const c of camadas) if (!c.atras) desenharCamada(ctx, c, f, e.grade);
 
   ctx.restore();
   return res;
+}
+
+// Um produto sozinho, em PNG transparente (v2: "Exportar só este
+// produto"). A área inclui o que a caixa de preço passa da célula.
+export function areaProdutoSozinho(e: Encarte, i: number): Retangulo {
+  const c = px(e.grade.celulas[i], e.formato), m = c.w * 0.06;
+  return { x: c.x - m, y: c.y - m, w: c.w + 2 * m, h: c.h + 2 * m };
+}
+export function desenharProdutoSozinho(ctx: Ctx2D, e: Encarte, i: number, escala = 1) {
+  const a = areaProdutoSozinho(e, i), item = e.itens[i];
+  if (!item) return;
+  ctx.save();
+  ctx.scale(escala, escala);
+  ctx.translate(-a.x, -a.y);
+  const camadas = (e.camadas || []).filter((c) => c.ancora === i);
+  for (const c of camadas) if (c.atras) desenharCamada(ctx, c, e.formato, e.grade);
+  desenharCard(ctx, px(e.grade.celulas[i], e.formato), { ...item, oculto: false }, e.kit, e.grade, e.estilo, e.politica);
+  for (const c of camadas) if (!c.atras) desenharCamada(ctx, c, e.formato, e.grade);
+  ctx.restore();
 }
