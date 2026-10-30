@@ -1,0 +1,14 @@
+name = "encartaai-api"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+# O id real é preenchido quando o banco for criado na conta
+# (wrangler d1 create encartaai). Para testes e dev local, qualquer id serve.
+[[d1_databases]]
+binding = "DB"
+database_name = "encartaai"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# SETUP_TOKEN é secret: wrangler secret put SETUP_TOKEN

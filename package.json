@@ -1,0 +1,7 @@
+{
+  "name": "encartaai",
+  "private": true,
+  "scripts": {
+    "test": "cd apps/api && npm test"
+  }
+}
