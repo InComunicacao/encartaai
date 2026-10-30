@@ -13,6 +13,8 @@ import { Produtos } from './paginas/Produtos';
 import { Kit } from './paginas/Kit';
 import { Equipe } from './paginas/Equipe';
 import { Lojas } from './paginas/Lojas';
+import { Campanhas } from './paginas/Campanhas';
+import { Editor } from './paginas/Editor';
 
 interface Sessao { eu: Eu | null; recarregar: () => Promise<void>; sair: () => Promise<void> }
 const Ctx = createContext<Sessao>(null as any);
@@ -112,7 +114,12 @@ function Casca() {
               <Route path="kit" element={<Kit />} />
               <Route path="lojas" element={<Lojas />} />
               {dono && <Route path="equipe" element={<Equipe />} />}
-              {MODULOS_MENU.map((m) => <Route key={m.id} path={m.id} element={<EmBreve modulo={m} liberado={eu.modulos.includes(m.id)} />} />)}
+              {eu.modulos.includes('encarte') && <>
+                <Route path="encarte" element={<Campanhas />} />
+                <Route path="encarte/:id" element={<Editor />} />
+              </>}
+              {MODULOS_MENU.filter((m) => m.id !== 'encarte' || !eu.modulos.includes('encarte')).map((m) =>
+                <Route key={m.id} path={m.id} element={<EmBreve modulo={m} liberado={eu.modulos.includes(m.id)} />} />)}
             </>
           )}
           <Route path="*" element={<Navigate to="/" replace />} />
