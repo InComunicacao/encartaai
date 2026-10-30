@@ -187,6 +187,76 @@ rotasBanco.post('/produtos', exigirPapel('dono', 'editor'), async (c) => {
   return c.json({ id }, 201);
 });
 
+// Importação em massa (planilha do Excel lida no navegador). Com EAN:
+// cria ou atualiza o produto daquele EAN. Sem EAN: cria só se não houver
+// outro com o mesmo nome — importar duas vezes não duplica nada.
+const MAX_LOTE = 5000;
+rotasBanco.post('/produtos/lote', exigirPapel('dono', 'editor'), async (c) => {
+  const t = c.get('sessao').tenantId!;
+  const b = await lerJson<{ linhas: { ean?: string; nome?: string; descricao?: string; categoria?: string }[] }>(c);
+  if (!b || !Array.isArray(b.linhas) || !b.linhas.length) return erro(c, 400, 'dados_invalidos', 'A planilha está vazia.');
+  if (b.linhas.length > MAX_LOTE) return erro(c, 400, 'limite', `Até ${MAX_LOTE} produtos por vez. Divida a planilha.`);
+  // lower() do SQLite não converte acentos (PÃO ≠ pão): compara no JS
+  const { results } = await c.env.DB.prepare('SELECT id, ean, nome AS n FROM produtos WHERE tenant_id = ?').bind(t).all<{ id: string; ean: string | null; n: string }>();
+  const porEan = new Map(results.filter((r) => r.ean).map((r) => [r.ean!, r.id]));
+  const porNome = new Set(results.map((r) => r.n.toLowerCase()));
+  const ops: D1PreparedStatement[] = [];
+  const erros: { linha: number; motivo: string }[] = [];
+  let criados = 0, atualizados = 0, ignorados = 0;
+  b.linhas.forEach((l, k) => {
+    const nome = String(l?.nome ?? '').trim().slice(0, 160);
+    const desc = l?.descricao ? String(l.descricao).trim().slice(0, 160) : null;
+    const cat = l?.categoria ? String(l.categoria).trim().slice(0, 80) : null;
+    const eanBruto = String(l?.ean ?? '').trim();
+    const ean = soDigitos(eanBruto);
+    if (eanBruto && !ean) { erros.push({ linha: k + 1, motivo: 'EAN inválido' }); return; }
+    if (!nome) { erros.push({ linha: k + 1, motivo: 'sem nome' }); return; }
+    if (ean && porEan.has(ean)) {
+      ops.push(c.env.DB.prepare('UPDATE produtos SET nome = ?, descricao = COALESCE(?, descricao), categoria = COALESCE(?, categoria) WHERE id = ? AND tenant_id = ?')
+        .bind(nome, desc, cat, porEan.get(ean), t));
+      atualizados++; return;
+    }
+    if (!ean && porNome.has(nome.toLowerCase())) { ignorados++; return; }
+    const id = novoId();
+    ops.push(c.env.DB.prepare('INSERT INTO produtos (id, tenant_id, ean, nome, descricao, categoria, criado_em) VALUES (?,?,?,?,?,?,?)')
+      .bind(id, t, ean, nome, desc, cat, agora()));
+    if (ean) porEan.set(ean, id);
+    porNome.add(nome.toLowerCase());
+    criados++;
+  });
+  for (let i = 0; i < ops.length; i += 100) await c.env.DB.batch(ops.slice(i, i + 100));
+  const ligadas = await ligarFotosPorEan(c.env.DB, t);
+  await auditar(c.env.DB, c.get('sessao'), t, 'produtos_importados', { criados, atualizados, ignorados, erros: erros.length });
+  return c.json({ criados, atualizados, ignorados, erros: erros.slice(0, 50), total_erros: erros.length, fotos_ligadas: ligadas });
+});
+
+// Foto com o EAN no nome do arquivo ("7894900027013.png", "coca 7894900027013")
+// vira foto do produto daquele EAN. Só liga o que ainda não está ligado;
+// a primeira foto de um produto sem foto vira a principal.
+export async function ligarFotosPorEan(db: D1Database, t: string): Promise<number> {
+  const { results: fotos } = await db.prepare(
+    `SELECT a.id, a.nome FROM assets a WHERE a.tenant_id = ? AND a.tipo = 'produto'
+        AND NOT EXISTS (SELECT 1 FROM produto_imagens pi WHERE pi.asset_id = a.id)`).bind(t).all<{ id: string; nome: string }>();
+  if (!fotos.length) return 0;
+  const { results: prods } = await db.prepare(
+    `SELECT p.id, p.ean, EXISTS (SELECT 1 FROM produto_imagens pi WHERE pi.produto_id = p.id) AS tem
+       FROM produtos p WHERE p.tenant_id = ? AND p.ean IS NOT NULL`).bind(t).all<{ id: string; ean: string; tem: number }>();
+  const porEan = new Map(prods.map((p) => [p.ean, p]));
+  const ops: D1PreparedStatement[] = [];
+  for (const f of fotos) {
+    const eans = (f.nome || '').match(/\d{8,14}/g) || [];
+    const p = eans.map((e) => porEan.get(e)).find(Boolean);
+    if (!p) continue;
+    ops.push(db.prepare('INSERT OR IGNORE INTO produto_imagens (produto_id, asset_id, principal) VALUES (?,?,?)').bind(p.id, f.id, p.tem ? 0 : 1));
+    p.tem = 1;
+  }
+  for (let i = 0; i < ops.length; i += 100) await db.batch(ops.slice(i, i + 100));
+  return ops.length;
+}
+
+rotasBanco.post('/produtos/ligar-fotos', exigirPapel('dono', 'editor'), async (c) =>
+  c.json({ fotos_ligadas: await ligarFotosPorEan(c.env.DB, c.get('sessao').tenantId!) }));
+
 rotasBanco.delete('/produtos/:id', exigirPapel('dono', 'editor'), async (c) => {
   const s = c.get('sessao');
   const r = await c.env.DB.prepare('DELETE FROM produtos WHERE id = ? AND tenant_id = ?').bind(c.req.param('id'), s.tenantId).run();

@@ -17,6 +17,9 @@ const POLITICAS = new Set(['maior', 'medio', 'minimo']);
 interface ItemEntrada {
   nome: string; descricao?: string; preco?: string; fator?: string;
   produto_id?: string | null; foto_id?: string | null; selo_id?: string | null; rotulo_app?: string | null;
+  oculto?: boolean; foto_ajuste?: { dx: number; dy: number; escala: number } | null;
+  escala_nome?: number | null; escala_preco?: number | null;
+  combo?: { preco_fora?: string; rotulo_fora?: string; qtd?: number; preco?: string; unit?: string; rotulo?: string; rotulo_unit?: string } | null;
 }
 interface Tema { grade: string; estilo: string; politica: string; fundo_id: string | null }
 
@@ -34,11 +37,26 @@ export function validarTema(t: any): Tema | string {
   return tema;
 }
 
+const num = (v: unknown, min: number, max: number, padrao: number) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : padrao;
+};
+
+// Só entra o que o motor sabe desenhar; números presos nos limites dele.
 function limparItem(i: ItemEntrada) {
+  const a = i.foto_ajuste, c = i.combo;
   return {
     nome: texto(i.nome, 120), descricao: texto(i.descricao, 120), preco: texto(i.preco, 20), fator: texto(i.fator, 20),
     produto_id: idOuNulo(i.produto_id), foto_id: idOuNulo(i.foto_id), selo_id: idOuNulo(i.selo_id),
     rotulo_app: i.rotulo_app ? texto(i.rotulo_app, 40) : null,
+    oculto: i.oculto === true,
+    foto_ajuste: a && typeof a === 'object' ? { dx: num(a.dx, -1, 1, 0), dy: num(a.dy, -1, 1, 0), escala: num(a.escala, 0.2, 3, 1) } : null,
+    escala_nome: i.escala_nome == null ? null : num(i.escala_nome, 0.5, 1.5, 1),
+    escala_preco: i.escala_preco == null ? null : num(i.escala_preco, 0.5, 1.5, 1),
+    combo: c && typeof c === 'object' ? {
+      preco_fora: texto(c.preco_fora, 20), rotulo_fora: texto(c.rotulo_fora, 40), qtd: Math.round(num(c.qtd, 1, 99, 2)),
+      preco: texto(c.preco, 20), unit: texto(c.unit, 20), rotulo: texto(c.rotulo, 40), rotulo_unit: texto(c.rotulo_unit, 60),
+    } : null,
   };
 }
 

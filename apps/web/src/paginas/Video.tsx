@@ -9,10 +9,10 @@ import { DUR_PRODUTO_PADRAO, ESTILOS, FORMATOS_VIDEO_PADRAO, VIDEO_FPS, desenhar
 import { api, ErroApi, type Asset } from '../api';
 import { useSessao } from '../App';
 import { Aviso, Modal } from '../componentes/Modal';
-import { carregarFonte, carregarImagem, kitDoCliente, type KitApi } from '../render-web';
+import { carregarFonte, carregarImagem, itemDoMotor, kitDoCliente, type ItemCampanha, type KitApi } from '../render-web';
 import { gravarMp4, podeGravarMp4 } from '../video/gravador';
 
-interface ItemC { nome: string; descricao: string; preco: string; fator: string; foto_id: string | null }
+type ItemC = ItemCampanha;
 interface Camp { id: string; nome: string; loja_id: string | null; tema: { estilo: string; politica: PoliticaTexto; fundo_id: string | null }; itens: ItemC[] }
 interface Linha { id: string; nome: string; itens: number }
 interface Loja { id: string; logo_asset_id: string | null }
@@ -74,7 +74,9 @@ export function Video() {
   }, [formato]);
   const limite = limiteProdutos(formato, dur);
   useEffect(() => {      // marca os primeiros que cabem
-    if (camp) setMarcados(camp.itens.map((it, i) => i < limite && !!it.nome.trim()));
+    if (!camp) return;
+    let n = 0;   // os primeiros que cabem, pulando os ocultos no encarte
+    setMarcados(camp.itens.map((it) => !it.oculto && !!it.nome.trim() && n++ < limite));
   }, [camp, limite]);
   const escolhidos = camp ? camp.itens.filter((_, i) => marcados[i]) : [];
   const excedeu = escolhidos.length > limite;
@@ -88,9 +90,9 @@ export function Video() {
       const { kit, fontes } = kitDoCliente(kitApi);
       const logoId = lojas.find((l) => l.id === camp.loja_id)?.logo_asset_id;
       const fundoId = fundo === 'encarte' ? camp.tema.fundo_id : fundo === 'arte' ? arteId : null;
-      const [img, logo, ...fotos] = await Promise.all([carregarImagem(fundoId), carregarImagem(logoId),
-        ...escolhidos.map((i) => carregarImagem(i.foto_id)), ...fontes.map(carregarFonte)]);
-      const itens: Item[] = escolhidos.slice(0, limite).map((i, k) => ({ nome: i.nome || ' ', descricao: i.descricao, preco: i.preco, fator: i.fator, foto: fotos[k] as any }));
+      const [img, logo, todos] = await Promise.all([carregarImagem(fundoId), carregarImagem(logoId),
+        Promise.all(escolhidos.slice(0, limite).map(itemDoMotor)), ...fontes.map(carregarFonte)]);
+      const itens: Item[] = todos.map((i) => ({ ...i, oculto: false }));
       if (vivo) setCena({ formato, kit, estilo: ESTILOS[camp.tema.estilo] || ESTILOS.etiqueta_vermelha, politica: camp.tema.politica, itens,
         fundo, fundoImagem: img as any, corFundo: cor, logo: logo as any, durProduto: dur, animacao: anim });
     })();
