@@ -36,7 +36,7 @@ export function Clientes() {
         <button className="primario" onClick={() => setNovo(true)}>+ Novo cliente</button>
       </div>
       <div className="cartao" style={{ padding: 0 }}>
-        {lista && lista.length === 0 && <div className="vazio">Nenhum cliente ainda. Comece pelo Terê Frutas.</div>}
+        {lista && lista.length === 0 && <div className="vazio">Nenhum cliente ainda. Clique em “+ Novo cliente” para cadastrar o primeiro.</div>}
         {lista && lista.length > 0 && (
           <table>
             <thead><tr><th>Cliente</th><th>Endereço</th><th>Plano</th><th>Acessos</th><th>Status</th></tr></thead>

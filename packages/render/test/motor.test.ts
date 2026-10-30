@@ -7,7 +7,7 @@ import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, beforeAll } from 'vitest';
-import { ENCARTE_VERTICAL, ESTILOS, ETIQUETA_VERMELHA, GRADES, KIT_PADRAO, SEM_CAIXA, blocoNomeDescricao, desenharEncarte,
+import { ENCARTE_VERTICAL, ESTILOS, ETIQUETA_VERMELHA, GRADES, KIT_GOTHAM, SEM_CAIXA, blocoNomeDescricao, desenharEncarte,
   maiorQueCabe, medirPreco, quebrar, separarPreco, type Ctx2D, type Item } from '../src';
 
 const PASTA = process.env.FONTES_GOTHAM || '';
@@ -39,7 +39,7 @@ describe('preço', () => {
     expect(separarPreco('007,5')).toEqual({ inteiro: '7', centavos: '50', digitos: 1 });
   });
   it('regra de valor: num mesmo espaço, menos dígitos = preço maior', () => {
-    const fonte = KIT_PADRAO.fontes.preco;
+    const fonte = KIT_GOTHAM.fontes.preco;
     const corpo = (p: string) => maiorQueCabe((s) => medirPreco(ctx, separarPreco(p), fonte, s, 0.7).largura <= 200, 400, 10);
     expect(corpo('9,99')).toBeGreaterThan(corpo('29,90'));
     expect(corpo('29,90')).toBeGreaterThan(corpo('129,90'));
@@ -56,22 +56,22 @@ describe('auto-fit', () => {
     }
   });
   it('quebra por palavras e recusa palavra maior que a largura', () => {
-    expect(quebrar(ctx, 'ARROZ TIO JOAO', KIT_PADRAO.fontes.nome, 20, 1000, 2)).toEqual(['ARROZ TIO JOAO']);
-    expect(quebrar(ctx, 'ARROZ TIO JOAO', KIT_PADRAO.fontes.nome, 20, 70, 3)!.length).toBeGreaterThan(1);
-    expect(quebrar(ctx, 'SUPERCALIFRAGILISTICO', KIT_PADRAO.fontes.nome, 40, 50, 2)).toBeNull();
+    expect(quebrar(ctx, 'ARROZ TIO JOAO', KIT_GOTHAM.fontes.nome, 20, 1000, 2)).toEqual(['ARROZ TIO JOAO']);
+    expect(quebrar(ctx, 'ARROZ TIO JOAO', KIT_GOTHAM.fontes.nome, 20, 70, 3)!.length).toBeGreaterThan(1);
+    expect(quebrar(ctx, 'SUPERCALIFRAGILISTICO', KIT_GOTHAM.fontes.nome, 40, 50, 2)).toBeNull();
   });
 });
 
 describe('hierarquia nome × descrição', () => {
   it('a descrição nunca sai maior que o nome, mesmo curta numa caixa larga', () => {
-    const r = blocoNomeDescricao(ctx, { nome: 'Queijo Muçarela Fatiado Especial', descricao: '1KG', preco: '1' }, KIT_PADRAO,
+    const r = blocoNomeDescricao(ctx, { nome: 'Queijo Muçarela Fatiado Especial', descricao: '1KG', preco: '1' }, KIT_GOTHAM,
       { x: 0, y: 0, w: 200, h: 60 }, 40, 0.67, 2, false);
     expect(r.corpoDescricao).toBeLessThan(r.corpoNome);
     expect(r.corpoDescricao / r.corpoNome).toBeCloseTo(0.67, 5);
   });
   it('nome comprido encolhe em vez de vazar', () => {
-    const curto = blocoNomeDescricao(ctx, { nome: 'Café', preco: '1' }, KIT_PADRAO, { x: 0, y: 0, w: 200, h: 60 }, 40, 0.67, 2, false);
-    const longo = blocoNomeDescricao(ctx, { nome: 'Achocolatado em Pó Nescau Radical Sabor Original', preco: '1' }, KIT_PADRAO,
+    const curto = blocoNomeDescricao(ctx, { nome: 'Café', preco: '1' }, KIT_GOTHAM, { x: 0, y: 0, w: 200, h: 60 }, 40, 0.67, 2, false);
+    const longo = blocoNomeDescricao(ctx, { nome: 'Achocolatado em Pó Nescau Radical Sabor Original', preco: '1' }, KIT_GOTHAM,
       { x: 0, y: 0, w: 200, h: 60 }, 40, 0.67, 2, false);
     expect(longo.corpoNome).toBeLessThan(curto.corpoNome);
   });
@@ -83,7 +83,7 @@ describe('encarte inteiro', () => {
       const f = ENCARTE_VERTICAL, esc = 0.5;
       const cv = createCanvas(f.w * esc, f.h * esc);
       const c = cv.getContext('2d') as unknown as Ctx2D;
-      const res = desenharEncarte(c, { formato: f, grade, estilo: ETIQUETA_VERMELHA, kit: KIT_PADRAO, itens: itens(grade.celulas.length) }, esc);
+      const res = desenharEncarte(c, { formato: f, grade, estilo: ETIQUETA_VERMELHA, kit: KIT_GOTHAM, itens: itens(grade.celulas.length) }, esc);
       expect(res).toHaveLength(grade.celulas.length);
       for (const [i, r] of res.entries()) {
         const W = grade.celulas[i].w * f.w;
@@ -98,7 +98,7 @@ describe('encarte inteiro', () => {
     for (const estilo of Object.values(ESTILOS)) {
       const cv = createCanvas(540, 960);
       const res = desenharEncarte(cv.getContext('2d') as unknown as Ctx2D,
-        { formato: ENCARTE_VERTICAL, grade: GRADES['9'], estilo, kit: KIT_PADRAO, itens: itens(9) }, 0.5);
+        { formato: ENCARTE_VERTICAL, grade: GRADES['9'], estilo, kit: KIT_GOTHAM, itens: itens(9) }, 0.5);
       expect(res.every((r) => r.corpoPreco > 0)).toBe(true);
       if (SAIDA) writeFileSync(join(SAIDA, `motor_estilo_${estilo.id}.png`), cv.toBuffer('image/png'));
     }
@@ -106,7 +106,7 @@ describe('encarte inteiro', () => {
   });
   it('política "mínimo" dá corpos menores que "maior"', () => {
     const corpo = (politica: 'maior' | 'minimo') => desenharEncarte(createCanvas(540, 960).getContext('2d') as unknown as Ctx2D,
-      { formato: ENCARTE_VERTICAL, grade: GRADES['4'], estilo: ETIQUETA_VERMELHA, kit: KIT_PADRAO, itens: [{ nome: 'Café', preco: '9,99' }], politica }, 0.5)[0];
+      { formato: ENCARTE_VERTICAL, grade: GRADES['4'], estilo: ETIQUETA_VERMELHA, kit: KIT_GOTHAM, itens: [{ nome: 'Café', preco: '9,99' }], politica }, 0.5)[0];
     expect(corpo('minimo').corpoPreco).toBeLessThan(corpo('maior').corpoPreco);
   });
 });

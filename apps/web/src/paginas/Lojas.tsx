@@ -30,7 +30,7 @@ export function Lojas() {
       <Aviso>{erro}</Aviso>
       {(papel === 'dono' || papel === 'editor') && (
         <form className="cartao linha" onSubmit={criar}>
-          <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome da loja (ex.: Cascatinha)" required style={{ flex: 1, margin: 0 }} />
+          <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome da loja (ex.: Loja 1 - Rio de Janeiro)" required style={{ flex: 1, margin: 0 }} />
           <button className="primario">Adicionar</button>
         </form>
       )}

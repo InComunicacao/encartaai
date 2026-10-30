@@ -27,9 +27,9 @@ export interface EstiloCaixa {
   nomeLinhasMax: number;
 }
 
-export const ETIQUETA_VERMELHA: EstiloCaixa = {
+export const ETIQUETA_VERMELHA: EstiloCaixa = {  // medida na v2
   id: 'etiqueta_vermelha',
-  nome: 'Etiqueta (padrão Terê)',
+  nome: 'Etiqueta clássica',
   caixas: [
     { papel: 'descricao', x: -0.04, w: 0.68, h: 0.236 },
     { papel: 'preco', x: 0.64, w: 0.40, h: 0.319 },
