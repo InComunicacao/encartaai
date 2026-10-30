@@ -28,3 +28,14 @@ npx wrangler d1 migrations apply encartaai --remote
 npx wrangler secret put SETUP_TOKEN        # 16+ caracteres; usado uma vez em POST /api/setup
 npx wrangler deploy
 ```
+
+## Telas (apps/web)
+
+React + Vite. Em produção, o mesmo Worker da API serve as telas (`[assets]` no wrangler.toml).
+
+```
+cd apps/web && npm install --legacy-peer-deps && npm run build
+cd ../api && npx wrangler dev          # API + telas em http://127.0.0.1:8787
+```
+
+Teste de ponta a ponta pelas telas (Playwright): `node apps/web/e2e/fluxo.cjs`

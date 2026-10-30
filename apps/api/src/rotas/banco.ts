@@ -275,6 +275,24 @@ rotasBancoGlobal.post(ROTA_UPLOAD, async (c) => {
   return c.json(r, 201);
 });
 
+rotasBancoGlobal.get('/assets', async (c) => {
+  const tipo = c.req.query('tipo');
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, tipo, nome, mime, bytes, largura, altura, etiquetas, 1 AS global, criado_em
+       FROM assets WHERE tenant_id IS NULL AND (?1 IS NULL OR tipo = ?1) ORDER BY criado_em DESC LIMIT 500`)
+    .bind(tipo ?? null).all<any>();
+  return c.json({ assets: results.map((a) => ({ ...a, global: true, etiquetas: JSON.parse(a.etiquetas) })) });
+});
+
+rotasBancoGlobal.get('/assets/:id/arquivo', async (c) => {
+  const a = await c.env.DB.prepare('SELECT r2_chave, mime FROM assets WHERE id = ? AND tenant_id IS NULL')
+    .bind(c.req.param('id')).first<{ r2_chave: string; mime: string }>();
+  const obj = a ? await c.env.ARQUIVOS.get(a.r2_chave) : null;
+  if (!a || !obj) return erro(c, 404, 'nao_encontrado', 'Arquivo não encontrado.');
+  return new Response(obj.body, { headers: { 'content-type': a.mime, 'cache-control': 'private, max-age=86400',
+    'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; sandbox" } });
+});
+
 rotasBancoGlobal.delete('/assets/:id', async (c) => {
   const a = await c.env.DB.prepare('SELECT r2_chave, nome FROM assets WHERE id = ? AND tenant_id IS NULL')
     .bind(c.req.param('id')).first<{ r2_chave: string; nome: string }>();

@@ -120,6 +120,34 @@ admin.get('/clientes', async (c) => {
   return c.json({ clientes: results });
 });
 
+// Planos e módulos, para os formulários do painel.
+admin.get('/catalogo', async (c) => {
+  const planos = (await c.env.DB.prepare(
+    `SELECT p.*, (SELECT json_group_array(modulo_id) FROM plano_modulos WHERE plano_id = p.id) AS modulos
+       FROM planos p WHERE p.ativo = 1 ORDER BY p.preco_centavos`).all<any>()).results
+    .map((p) => ({ ...p, modulos: JSON.parse(p.modulos) }));
+  const modulos = (await c.env.DB.prepare('SELECT id, nome, grupo FROM modulos ORDER BY grupo, nome').all()).results;
+  return c.json({ planos, modulos });
+});
+
+admin.get('/clientes/:id', async (c) => {
+  const id = c.req.param('id');
+  const t = await c.env.DB.prepare(
+    `SELECT t.*, p.nome AS plano_nome, p.acessos_inclusos FROM tenants t JOIN planos p ON p.id = t.plano_id WHERE t.id = ?`)
+    .bind(id).first<any>();
+  if (!t) return erro(c, 404, 'nao_encontrado', 'Cliente não encontrado.');
+  const excecoes = (await c.env.DB.prepare('SELECT modulo_id, ativo, motivo FROM tenant_modulos WHERE tenant_id = ?')
+    .bind(id).all()).results;
+  const usuarios = (await c.env.DB.prepare(
+    'SELECT id, email, nome, papel, ativo FROM usuarios WHERE tenant_id = ? ORDER BY criado_em').bind(id).all()).results;
+  return c.json({
+    cliente: t,
+    modulos: [...(await modulosDoTenant(c.env.DB, id))].sort(),
+    excecoes, usuarios,
+    acessos: { limite: await limiteDeAcessos(c.env.DB, id), emUso: await acessosEmUso(c.env.DB, id) },
+  });
+});
+
 admin.post('/clientes', async (c) => {
   const b = await lerJson<{ nome: string; slug: string; plano_id: string; dono: { email: string; nome: string; senha: string } }>(c);
   if (!b || !b.nome || !b.dono) return erro(c, 400, 'dados_invalidos', 'Informe nome, slug, plano e o dono.');

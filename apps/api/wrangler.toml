@@ -19,3 +19,12 @@ migrations_dir = "migrations"
 [[r2_buckets]]
 binding = "ARQUIVOS"
 bucket_name = "encartaai-arquivos"
+
+# As telas (apps/web) são servidas pelo mesmo Worker: mesma origem, cookie
+# simples, sem CORS. /api/* vai para o código; o resto, para os arquivos,
+# com qualquer rota desconhecida caindo no index.html (o React resolve).
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
