@@ -1,0 +1,139 @@
+/* EncartaAi — painel. Claro, denso o bastante para trabalho diário, e
+   com a cor da marca só onde há ação. As cores vivem em variáveis para
+   o whitelabel trocar sem tocar no resto. */
+:root {
+  --marca: #12a150;
+  --marca-escura: #0c7a3c;
+  --marca-clara: #e8f6ee;
+  --perigo: #d92d20;
+  --perigo-clara: #fdecea;
+  --aviso: #b54708;
+  --aviso-clara: #fff4e5;
+  --texto: #1b1f24;
+  --texto-2: #5b6470;
+  --linha: #e3e6ea;
+  --fundo: #f5f6f8;
+  --cartao: #ffffff;
+  --raio: 10px;
+  --sombra: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08);
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  color: var(--texto);
+  background: var(--fundo);
+  font-size: 14px;
+  line-height: 1.45;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--fundo); }
+h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -.01em; }
+h2 { font-size: 16px; margin: 0 0 12px; }
+p { margin: 0 0 8px; }
+a { color: var(--marca-escura); }
+.sub { color: var(--texto-2); margin-bottom: 20px; }
+
+/* ── estrutura ── */
+.casca { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+.lateral { background: #111827; color: #d1d5db; padding: 18px 12px; display: flex; flex-direction: column; gap: 2px; }
+.logo { display: flex; align-items: baseline; gap: 0; color: #fff; font-weight: 700; font-size: 18px; padding: 4px 10px 18px; }
+.logo b { color: #34d399; }
+.lateral .grupo { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #6b7280; padding: 14px 10px 6px; }
+.lateral a { color: #d1d5db; text-decoration: none; padding: 8px 10px; border-radius: 8px; display: flex; justify-content: space-between; }
+.lateral a:hover { background: #1f2937; color: #fff; }
+.lateral a.ativo { background: #1f2937; color: #fff; box-shadow: inset 3px 0 0 #34d399; }
+.lateral a.bloqueado { color: #6b7280; }
+.lateral .rodape-lateral { margin-top: auto; padding: 12px 10px 0; border-top: 1px solid #1f2937; font-size: 12px; color: #9ca3af; }
+.lateral .rodape-lateral button { margin-top: 8px; }
+.principal { padding: 28px 32px 48px; max-width: 1200px; width: 100%; }
+.cabecalho { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+
+/* ── peças ── */
+.cartao { background: var(--cartao); border: 1px solid var(--linha); border-radius: var(--raio); box-shadow: var(--sombra); padding: 20px; margin-bottom: 16px; }
+.grade-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.linha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.espaco { flex: 1; }
+
+button, .botao {
+  font: inherit; font-weight: 600; border-radius: 8px; padding: 8px 14px; cursor: pointer;
+  border: 1px solid var(--linha); background: #fff; color: var(--texto); display: inline-flex; align-items: center; gap: 6px;
+}
+button:hover { border-color: #c7ccd3; }
+button.primario { background: var(--marca); border-color: var(--marca); color: #fff; }
+button.primario:hover { background: var(--marca-escura); }
+button.perigo { color: var(--perigo); }
+button.perigo.cheio { background: var(--perigo); border-color: var(--perigo); color: #fff; }
+button.discreto { border-color: transparent; background: transparent; color: var(--texto-2); padding: 6px 8px; }
+button.discreto.perigo { color: var(--perigo); }
+button:disabled { opacity: .55; cursor: not-allowed; }
+.lateral button { background: transparent; color: #d1d5db; border-color: #374151; }
+
+label { display: block; font-weight: 600; font-size: 13px; margin: 0 0 12px; }
+label > span.dica { display: block; font-weight: 400; color: var(--texto-2); font-size: 12px; }
+input, select, textarea {
+  font: inherit; width: 100%; padding: 9px 11px; border: 1px solid #cfd4da; border-radius: 8px; background: #fff; margin-top: 4px; color: var(--texto);
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--marca-clara); border-color: var(--marca); }
+input[type="color"] { padding: 2px; height: 38px; width: 56px; }
+
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--texto-2); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--linha); }
+td { padding: 10px; border-bottom: 1px solid var(--linha); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+tr.clicavel { cursor: pointer; }
+tr.clicavel:hover td { background: #fafbfc; }
+
+.etiqueta { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #eef0f3; color: var(--texto-2); }
+.etiqueta.verde { background: var(--marca-clara); color: var(--marca-escura); }
+.etiqueta.vermelha { background: var(--perigo-clara); color: var(--perigo); }
+.etiqueta.laranja { background: var(--aviso-clara); color: var(--aviso); }
+
+.aviso { padding: 10px 12px; border-radius: 8px; background: var(--aviso-clara); color: var(--aviso); margin-bottom: 12px; }
+.aviso.erro { background: var(--perigo-clara); color: var(--perigo); }
+.aviso.ok { background: var(--marca-clara); color: var(--marca-escura); }
+.vazio { text-align: center; color: var(--texto-2); padding: 36px 12px; }
+
+/* ── entrar ── */
+.tela-entrar { min-height: 100vh; display: grid; place-items: center; background: linear-gradient(160deg, #0f172a, #134e3a); padding: 16px; }
+.tela-entrar .cartao { width: 100%; max-width: 380px; padding: 28px; }
+
+/* ── modal ── */
+.fundo-modal { position: fixed; inset: 0; background: rgba(17, 24, 39, .55); display: grid; place-items: center; z-index: 50; padding: 16px; }
+.modal { background: #fff; border-radius: 12px; width: 100%; max-width: 480px; padding: 22px; box-shadow: 0 20px 40px rgba(0,0,0,.25); }
+.modal .acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* ── banco de imagens ── */
+.zona-envio { border: 2px dashed #cfd4da; border-radius: var(--raio); padding: 22px; text-align: center; color: var(--texto-2); background: #fff; margin-bottom: 16px; transition: .15s; }
+.zona-envio.ativa { border-color: var(--marca); background: var(--marca-clara); color: var(--marca-escura); }
+.galeria { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.miniatura { background: #fff; border: 1px solid var(--linha); border-radius: var(--raio); overflow: hidden; display: flex; flex-direction: column; }
+.miniatura .imagem { aspect-ratio: 1; display: grid; place-items: center; background:
+  repeating-conic-gradient(#f1f3f5 0% 25%, #fff 0% 50%) 50% / 16px 16px; }
+.miniatura .imagem img { max-width: 92%; max-height: 92%; object-fit: contain; }
+.miniatura .imagem .fonte-amostra { font-size: 30px; }
+.miniatura .info { padding: 8px 10px; font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
+.miniatura .info strong { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.miniatura .info .linha { justify-content: space-between; }
+.abas { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+.abas button { border-radius: 999px; padding: 6px 12px; font-weight: 500; }
+.abas button.ativa { background: var(--texto); color: #fff; border-color: var(--texto); }
+
+/* ── módulos ── */
+.modulos { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.modulo { border: 1px solid var(--linha); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.modulo .linha { justify-content: space-between; }
+.modulo select { margin: 0; padding: 5px 8px; font-size: 13px; }
+
+/* ── kit da marca ── */
+.amostra-fonte { font-size: 28px; padding: 10px 12px; border: 1px solid var(--linha); border-radius: 8px; margin-top: 6px; background: #fafbfc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cores { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.cores label { display: flex; align-items: center; gap: 10px; margin: 0; }
+.cores label input[type="color"] { margin: 0; flex: none; }
+.previa-caixa { display: inline-flex; align-items: stretch; border-radius: 8px; overflow: hidden; box-shadow: var(--sombra); }
+.previa-caixa .desc { padding: 14px 18px; min-width: 200px; }
+.previa-caixa .preco { padding: 8px 18px; font-size: 44px; line-height: 1; display: flex; align-items: center; }
+
+@media (max-width: 860px) {
+  .casca { grid-template-columns: 1fr; }
+  .lateral { flex-direction: row; flex-wrap: wrap; padding: 10px; }
+  .lateral .grupo, .lateral .rodape-lateral { display: none; }
+  .principal { padding: 18px 16px 40px; }
+  .grade-2 { grid-template-columns: 1fr; }
+}
