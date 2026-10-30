@@ -155,3 +155,9 @@ tr.clicavel:hover td { background: #fafbfc; }
 .sugestoes { font-size: 12px; color: var(--aviso); margin-top: 4px; }
 .sugestoes button { font-size: 12px; padding: 2px 6px; color: var(--marca-escura); }
 @media (max-width: 1100px) { .editor { grid-template-columns: 1fr; } .previa { position: static; max-width: 420px; } }
+
+/* vídeo */
+.previa-video { background: repeating-conic-gradient(#e9ecef 0% 25%, #fff 0% 50%) 50% / 16px 16px; border-radius: 8px; overflow: hidden; box-shadow: var(--sombra); max-width: 100%; }
+.previa-video canvas { display: block; }
+.barra { height: 10px; background: #e9ecef; border-radius: 999px; overflow: hidden; }
+.barra > div { height: 100%; background: var(--marca); transition: width .2s; }
