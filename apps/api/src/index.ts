@@ -8,25 +8,18 @@
 //     consegue mandar isso sem passar pelo CORS, o que fecha o CSRF junto
 //     com o cookie SameSite=Lax.
 
-import { Hono, type Context, type Next } from 'hono';
+import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { conferirSenha, gerarHashSenha, SENHA_MINIMO } from './lib/senha';
-import { COOKIE_SESSAO, criarSessao, encerrarSessao, lerSessao, type SessaoValida } from './lib/sessao';
+import { COOKIE_SESSAO, criarSessao, encerrarSessao } from './lib/sessao';
 import { acessosEmUso, limiteDeAcessos, modulosDoTenant } from './lib/modulos';
+import { type AppEnv, agora, auditar, autenticar, erro, exigirModulo, exigirPapel, exigirTenant, lerJson, novoId } from './http';
+import { rotasBanco, rotasBancoGlobal, ROTA_UPLOAD } from './rotas/banco';
+import { rotasKit } from './rotas/kit';
 
-export interface Env {
-  DB: D1Database;
-  SETUP_TOKEN?: string;
-}
-type Vars = { sessao: SessaoValida };
-type C = Context<{ Bindings: Env; Variables: Vars }>;
+export type { Env } from './http';
 
-const app = new Hono<{ Bindings: Env; Variables: Vars }>().basePath('/api');
-
-const agora = () => Date.now();
-const novoId = () => crypto.randomUUID();
-const erro = (c: C, status: number, codigo: string, mensagem: string) =>
-  c.json({ erro: codigo, mensagem }, status as any);
+const app = new Hono<AppEnv>().basePath('/api');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/;
@@ -36,56 +29,23 @@ const SLUGS_RESERVADOS = new Set(['www', 'api', 'admin', 'app', 'go', 'painel', 
 // o e-mail não existe: sem isso, a resposta mais rápida conta quem é cliente.
 let hashFantasma: Promise<string> | null = null;
 
-async function lerJson<T>(c: C): Promise<T | null> {
-  try { return await c.req.json<T>(); } catch { return null; }
-}
-
-async function auditar(db: D1Database, s: SessaoValida | null, tenantId: string | null, acao: string, detalhe: unknown) {
-  await db.prepare('INSERT INTO auditoria (id, tenant_id, usuario_id, acao, detalhe, criado_em) VALUES (?,?,?,?,?,?)')
-    .bind(novoId(), tenantId, s ? s.usuarioId : null, acao, JSON.stringify(detalhe ?? {}), agora()).run();
-}
-
 // ── middlewares ─────────────────────────────────────────────────────
+// Escrita só com JSON — exceto o envio de arquivo, que manda o próprio
+// binário com Content-Type de imagem/fonte. Esses tipos também não são
+// "simples" para o CORS, então um site de fora continua sem conseguir
+// enviar nada em nome de quem está logado.
+const TIPOS_UPLOAD = /^(image\/(png|jpeg|webp)|font\/(woff2?|ttf|otf)|application\/octet-stream)\b/i;
 app.use('*', async (c, next) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(c.req.method)) {
-    const tipo = c.req.header('content-type') || '';
-    if (!tipo.toLowerCase().startsWith('application/json')) {
-      return erro(c, 415, 'json_obrigatorio', 'Envie os dados como JSON.');
+    const tipo = (c.req.header('content-type') || '').toLowerCase();
+    const ehUpload = c.req.method === 'POST' && c.req.path.endsWith(ROTA_UPLOAD);
+    if (ehUpload ? !TIPOS_UPLOAD.test(tipo) : !tipo.startsWith('application/json')) {
+      return erro(c, 415, ehUpload ? 'tipo_arquivo' : 'json_obrigatorio',
+        ehUpload ? 'Envie o arquivo com o Content-Type da imagem ou fonte.' : 'Envie os dados como JSON.');
     }
   }
   await next();
 });
-
-async function autenticar(c: C, next: Next) {
-  const r = await lerSessao(c.env.DB, getCookie(c, COOKIE_SESSAO));
-  if (!r.ok) {
-    const mensagens: Record<string, string> = {
-      sessao_substituida: 'Sua conta foi aberta em outro computador.',
-      cliente_suspenso: 'O acesso deste cliente está suspenso.',
-    };
-    return erro(c, 401, r.motivo, mensagens[r.motivo] || 'Entre novamente.');
-  }
-  c.set('sessao', r);
-  await next();
-}
-
-const exigirPapel = (...papeis: SessaoValida['papel'][]) => async (c: C, next: Next) => {
-  if (!papeis.includes(c.get('sessao').papel)) return erro(c, 403, 'sem_permissao', 'Seu perfil não pode fazer isso.');
-  await next();
-};
-
-// O super admin não pertence a cliente nenhum: rotas de cliente exigem tenant.
-async function exigirTenant(c: C, next: Next) {
-  if (!c.get('sessao').tenantId) return erro(c, 403, 'sem_cliente', 'Esta área é do painel do cliente.');
-  await next();
-}
-
-const exigirModulo = (modulo: string) => async (c: C, next: Next) => {
-  const t = c.get('sessao').tenantId!;
-  const mods = await modulosDoTenant(c.env.DB, t);
-  if (!mods.has(modulo)) return erro(c, 403, 'modulo_bloqueado', 'Este recurso não faz parte do seu plano.');
-  await next();
-};
 
 // ── configuração inicial: cria o primeiro super admin ───────────────
 // Só funciona com o SETUP_TOKEN (secret do Worker) e só enquanto não
@@ -149,7 +109,7 @@ app.get('/eu', autenticar, async (c) => {
 });
 
 // ── painel do super admin ───────────────────────────────────────────
-const admin = new Hono<{ Bindings: Env; Variables: Vars }>();
+const admin = new Hono<AppEnv>();
 admin.use('*', autenticar, exigirPapel('super'));
 
 admin.get('/clientes', async (c) => {
@@ -231,10 +191,11 @@ admin.put('/clientes/:id/modulos/:modulo', async (c) => {
   return c.json({ ok: true, modulos: [...(await modulosDoTenant(c.env.DB, id))].sort() });
 });
 
+admin.route('/banco', rotasBancoGlobal);
 app.route('/admin', admin);
 
 // ── painel do cliente ───────────────────────────────────────────────
-const cliente = new Hono<{ Bindings: Env; Variables: Vars }>();
+const cliente = new Hono<AppEnv>();
 cliente.use('*', autenticar, exigirTenant);
 
 cliente.get('/usuarios', exigirPapel('dono'), async (c) => {
@@ -307,6 +268,9 @@ cliente.post('/exportacoes/:modulo', async (c, next) => {
     .bind(s.tenantId, mes, 'exportacoes_' + c.req.param('modulo')).run();
   return c.json({ ok: true });
 });
+
+cliente.route('/', rotasBanco);
+cliente.route('/kit', rotasKit);
 
 app.route('/', cliente);
 
