@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { api, ErroApi, urlArquivo, type Asset } from '../api';
 import { useSessao } from '../App';
 import { Aviso, Modal } from '../componentes/Modal';
+import { ImportarPlanilha } from '../componentes/ImportarPlanilha';
 
 interface Produto { id: string; ean: string | null; nome: string; descricao: string | null; categoria: string | null; foto_id: string | null }
 interface Resultado { texto: string; status: 'ean' | 'apelido' | 'sugestao' | 'nenhum'; produto?: { id: string; nome: string; foto_id: string | null };
@@ -13,6 +14,7 @@ export function Produtos() {
   const [lista, setLista] = useState<Produto[] | null>(null);
   const [q, setQ] = useState('');
   const [novo, setNovo] = useState(false);
+  const [importar, setImportar] = useState(false);
   const [foto, setFoto] = useState<Produto | null>(null);
   const [erro, setErro] = useState('');
 
@@ -28,7 +30,8 @@ export function Produtos() {
     <>
       <div className="cabecalho">
         <div><h1>Produtos</h1><p className="sub">O cadastro que liga cada produto à sua foto, pelo EAN ou pelo nome.</p></div>
-        {pode && <button className="primario" onClick={() => setNovo(true)}>+ Novo produto</button>}
+        {pode && <div className="linha"><button onClick={() => setImportar(true)}>Importar planilha</button>
+          <button className="primario" onClick={() => setNovo(true)}>+ Novo produto</button></div>}
       </div>
       <Testador />
       <Aviso>{erro}</Aviso>
@@ -51,6 +54,7 @@ export function Produtos() {
           </table>
         )}
       </div>
+      {importar && <ImportarPlanilha aoFechar={() => setImportar(false)} aoConcluir={carregar} />}
       {novo && <NovoProduto aoFechar={() => setNovo(false)} aoSalvar={() => { setNovo(false); carregar(); }} />}
       {foto && <EscolherFoto produto={foto} aoFechar={() => setFoto(null)} aoSalvar={() => { setFoto(null); carregar(); }} />}
     </>

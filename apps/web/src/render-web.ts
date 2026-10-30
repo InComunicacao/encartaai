@@ -3,7 +3,7 @@
 //
 // Desenhar antes de a fonte chegar é o bug clássico "a fonte saiu errada
 // no export" — por isso tudo aqui é aguardado.
-import { KIT_PADRAO, type Fonte, type Imagem, type Kit } from '@encartaai/render';
+import { KIT_PADRAO, type Fonte, type Imagem, type Item, type Kit } from '@encartaai/render';
 import { urlArquivo } from './api';
 
 interface FonteApi { origem: 'google' | 'arquivo'; familia: string; asset_id?: string; peso?: number }
@@ -103,4 +103,22 @@ export function lerLista(texto: string): LinhaColada[] {
     if (medida && medida.index! > 0) { descricao = medida[1].trim(); nome = nome.slice(0, medida.index).trim(); }
     return { nome, descricao, preco, fator, ean };
   });
+}
+
+// Item como o editor guarda (API, snake_case) → item do motor.
+export interface ItemCampanha {
+  nome: string; descricao: string; preco: string; fator: string; foto_id: string | null; produto_id: string | null;
+  selo_id?: string | null; rotulo_app?: string | null; oculto?: boolean;
+  foto_ajuste?: { dx: number; dy: number; escala: number } | null; escala_nome?: number | null; escala_preco?: number | null;
+  combo?: { preco_fora: string; rotulo_fora?: string; qtd: number; preco: string; unit?: string; rotulo?: string; rotulo_unit?: string } | null;
+}
+export async function itemDoMotor(i: ItemCampanha): Promise<Item> {
+  const [foto, selo] = await Promise.all([carregarImagem(i.foto_id), carregarImagem(i.selo_id)]);
+  const c = i.combo;
+  return {
+    nome: i.nome || ' ', descricao: i.descricao, preco: i.preco, fator: i.fator, rotuloApp: i.rotulo_app || undefined,
+    foto: foto as any, selo: selo as any, oculto: !!i.oculto, fotoAjuste: i.foto_ajuste || undefined,
+    escalaNome: i.escala_nome ?? undefined, escalaPreco: i.escala_preco ?? undefined,
+    combo: c && c.preco ? { precoFora: c.preco_fora, rotuloFora: c.rotulo_fora, qtd: c.qtd, preco: c.preco, unit: c.unit, rotulo: c.rotulo, rotuloUnit: c.rotulo_unit } : null,
+  };
 }

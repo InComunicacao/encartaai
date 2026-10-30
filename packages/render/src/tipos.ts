@@ -41,6 +41,23 @@ export interface Item {
   rotuloApp?: string;            // sobrescreve kit.textos.rotulo_app
   foto?: Imagem | null;
   selo?: Imagem | null;
+  oculto?: boolean;              // fica na campanha, não aparece no material
+  // Ajustes pontuais (frações da célula): mover e dar zoom na foto.
+  fotoAjuste?: { dx: number; dy: number; escala: number };
+  escalaNome?: number;           // 0,5–1,5 sobre o tamanho calculado
+  escalaPreco?: number;
+  // Caixa combinada (v2): "fora do app" em cima, "leve N por" embaixo.
+  combo?: Combo | null;
+}
+
+export interface Combo {
+  precoFora: string;             // preço cheio, fora do aplicativo
+  rotuloFora?: string;           // 'FORA DO APP'
+  qtd: number;                   // leve N
+  preco: string;                 // por quanto, no app
+  unit?: string;                 // vazio = calcula preco / qtd
+  rotulo?: string;               // vazio = 'LEVE 3 POR'
+  rotuloUnit?: string;           // 'NESTA PROMOÇÃO A UNIDADE SAI POR'
 }
 
 // Grade: uma célula por produto, em frações do formato.
