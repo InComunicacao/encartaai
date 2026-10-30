@@ -80,3 +80,22 @@ describe('logo por loja', () => {
     expect((await req('PUT', '/lojas/' + loja, { logo_asset_id: logoB }, S.A)).status).toBe(400);
   });
 });
+
+describe('rodapé da campanha', () => {
+  it('guarda blocos, cores e personagem, e limpa o que não serve', async () => {
+    const id = (await req('POST', '/campanhas', { nome: 'Rodapé' }, S.A)).json.id;
+    const r = await req('PUT', '/campanhas/' + id, { validade_de: '2026-11-01', validade_ate: '2026-11-07', tema: { grade: '9', rodape: {
+      transparente: false, cor_fundo: '#0057b8', cor_texto: 'azul', personagem_id: 'x',
+      blocos: [{ texto: 'CONSULTE LIMITE POR CPF', negrito: true, tamanho: 9, alinhar: 'diagonal' }, { texto: 'VÁLIDAS DE {de} A {ate}', tamanho: 0.7 }] } } }, S.A);
+    expect(r.status).toBe(200);
+    const c = (await req('GET', '/campanhas/' + id, undefined, S.A)).json.campanha;
+    expect(c).toMatchObject({ validade_de: '2026-11-01', validade_ate: '2026-11-07' });
+    expect(c.tema.rodape).toMatchObject({ cor_fundo: '#0057b8', cor_texto: null, personagem_id: null,
+      blocos: [{ negrito: true, tamanho: 3, alinhar: 'centro' }, { tamanho: 0.7, negrito: false }] });
+  });
+  it('recusa mais de 8 blocos', async () => {
+    const id = (await req('POST', '/campanhas', { nome: 'R2' }, S.A)).json.id;
+    const blocos = Array.from({ length: 9 }, () => ({ texto: 'x' }));
+    expect((await req('PUT', '/campanhas/' + id, { tema: { rodape: { blocos } } }, S.A)).status).toBe(400);
+  });
+});

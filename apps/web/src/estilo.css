@@ -184,3 +184,16 @@ tr.clicavel:hover td { background: #fafbfc; }
 label.botao { display: inline-flex; align-items: center; cursor: pointer; }
 .ajustes .linha { flex-wrap: nowrap; }
 @media (max-width: 1100px) { .grade-ajustes { grid-template-columns: 1fr 1fr; } .grade-combo { grid-template-columns: 1fr 1fr; } }
+
+/* rodapé */
+.abas button.ativa, .abas button[aria-selected=true] { background: var(--texto); color: #fff; border-color: var(--texto); }
+.bloco-rodape { border: 1px solid var(--linha); border-radius: 8px; padding: 8px; margin-bottom: 8px; background: #fafbfc; }
+.bloco-rodape.oculto { opacity: .5; }
+.bloco-rodape textarea { margin: 0 0 6px; font-size: 13px; }
+.bloco-rodape .linha { flex-wrap: nowrap; gap: 4px; }
+.bloco-rodape button { padding: 4px 8px; min-width: 32px; }
+.bloco-rodape .valor { min-width: 42px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+button.ativo { background: var(--texto); color: #fff; border-color: var(--texto); }
+.cores-rodape { display: flex; gap: 18px; flex-wrap: wrap; }
+.cor-rodape { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
+.cor-rodape input[type=color] { width: 44px; height: 32px; padding: 2px; margin: 0; }

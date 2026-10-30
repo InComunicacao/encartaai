@@ -29,6 +29,13 @@ export function Lojas() {
     catch (x) { setErro(x instanceof ErroApi ? x.message : 'Falhou.'); }
   }
 
+  // Texto próprio da loja (endereço, telefone…), usado no rodapé com {loja_texto}.
+  async function textoRodape(l: Loja) {
+    const t = prompt(`Texto do rodapé da loja "${l.nome}" (endereço, telefone, horário). Deixe vazio para tirar.`, l.rodape_texto || '');
+    if (t === null) return;
+    try { await api.put('/lojas/' + l.id, { rodape_texto: t.trim() || null }); await carregar(); } catch (x) { setErro(x instanceof ErroApi ? x.message : 'Falhou.'); }
+  }
+
   return (
     <>
       <h1>Lojas</h1>
@@ -48,8 +55,9 @@ export function Lojas() {
               {l.logo_asset_id ? <img src={urlArquivo(l.logo_asset_id)} alt={'Logo ' + l.nome} style={{ height: 44, maxWidth: 110, objectFit: 'contain' }} />
                 : <span className="etiqueta laranja">sem logo</span>}
             </td>
-            <td><strong>{l.nome}</strong></td>
+            <td><strong>{l.nome}</strong>{l.rodape_texto && <div className="sub" style={{ margin: 0, fontSize: 12 }}>Rodapé: {l.rodape_texto}</div>}</td>
             <td style={{ textAlign: 'right' }}>
+              {edita && <button className="discreto" onClick={() => textoRodape(l)}>Texto do rodapé</button>}
               {edita && <button className="discreto" onClick={() => setLogoDe(l)}>{l.logo_asset_id ? 'Trocar logo' : 'Escolher logo'}</button>}
               {papel === 'dono' && <button className="discreto perigo" onClick={() => apagar(l)}>Apagar</button>}
             </td>

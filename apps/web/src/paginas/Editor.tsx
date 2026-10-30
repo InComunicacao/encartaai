@@ -6,12 +6,13 @@ import { ENCARTE_VERTICAL, ESTILOS, GRADES, desenharEncarte, unitarioCombo, type
 import { api, ErroApi, urlArquivo, type Asset } from '../api';
 import { useSessao } from '../App';
 import { Aviso, Modal } from '../componentes/Modal';
-import { carregarFonte, carregarImagem, itemDoMotor, kitDoCliente, lerLista, type ItemCampanha, type KitApi } from '../render-web';
+import { carregarFonte, carregarImagem, itemDoMotor, kitDoCliente, lerLista, rodapeDoMotor, rodapePadrao, type ItemCampanha, type KitApi, type RodapeApi } from '../render-web';
+import { PainelRodape } from '../componentes/PainelRodape';
 
 interface ItemEd extends ItemCampanha { candidatos?: { id: string; nome: string; foto_id: string | null; pontuacao: number }[] }
-interface Tema { grade: string; estilo: string; politica: PoliticaTexto; fundo_id: string | null }
-interface Camp { id: string; nome: string; loja_id: string | null; tema: Tema; itens: ItemEd[]; atualizado_em: number }
-interface Loja { id: string; nome: string; logo_asset_id: string | null }
+interface Tema { grade: string; estilo: string; politica: PoliticaTexto; fundo_id: string | null; rodape?: RodapeApi }
+interface Camp { id: string; nome: string; loja_id: string | null; validade_de: string | null; validade_ate: string | null; tema: Tema; itens: ItemEd[]; atualizado_em: number }
+interface Loja { id: string; nome: string; logo_asset_id: string | null; rodape_texto: string | null }
 
 const NOMES_GRADE: Record<string, string> = { '1': '1 produto', '4': '4 produtos (2×2)', '6': '6 produtos (2×3)', '8': '8 produtos (2×4)', '9': '9 produtos (3×3)', '12': '12 produtos (3×4)' };
 const vazio = (): ItemEd => ({ nome: '', descricao: '', preco: '', fator: 'UN', foto_id: null, produto_id: null, selo_id: null, oculto: false,
@@ -30,6 +31,8 @@ export function Editor() {
   const [foto, setFoto] = useState<number | null>(null);
   const [sel, setSel] = useState<number | null>(null);
   const [selos, setSelos] = useState<Asset[]>([]);
+  const [personagens, setPersonagens] = useState<Asset[]>([]);
+  const [aba, setAba] = useState<'produtos' | 'rodape'>('produtos');
   const [erro, setErro] = useState('');
   const versao = useRef(0);
   const sujo = useRef(false);
@@ -40,6 +43,7 @@ export function Editor() {
         api.get<{ campanha: Camp }>('/campanhas/' + id), api.get<{ lojas: Loja[] }>('/lojas'),
         api.get<{ assets: Asset[] }>('/assets?tipo=tema'), api.get<{ assets: Asset[] }>('/assets?tipo=fundo'), api.get<{ kit: KitApi }>('/kit')]);
       api.get<{ assets: Asset[] }>('/assets?tipo=selo').then((r) => setSelos(r.assets)).catch(() => {});
+      api.get<{ assets: Asset[] }>('/assets?tipo=personagem').then((r) => setPersonagens(r.assets)).catch(() => {});
       versao.current = c.campanha.atualizado_em;
       setCamp({ ...c.campanha, itens: c.campanha.itens.map((i) => ({ ...vazio(), ...i })) });
       setLojas(l.lojas); setFundos([...f1.assets, ...f2.assets]); setKitApi(k.kit);
@@ -52,7 +56,7 @@ export function Editor() {
     try {
       const corpo: Record<string, unknown> = {
         itens: c.itens.map(({ candidatos, ...i }) => i), versao: versao.current,
-        ...(operador ? {} : { nome: c.nome, tema: c.tema, loja_id: c.loja_id }),
+        ...(operador ? {} : { nome: c.nome, tema: c.tema, loja_id: c.loja_id, validade_de: c.validade_de, validade_ate: c.validade_ate }),
       };
       const r = await api.put<{ versao: number }>('/campanhas/' + c.id, corpo);
       versao.current = r.versao; sujo.current = false;
@@ -96,12 +100,14 @@ export function Editor() {
     const { kit, fontes } = kitDoCliente(kitApi);
     const grade = GRADES[c.tema.grade];
     const usados = c.itens.slice(0, grade.celulas.length);
-    const logoId = lojas.find((l) => l.id === c.loja_id)?.logo_asset_id;
-    const [fundo, logo, itens] = await Promise.all([carregarImagem(c.tema.fundo_id), carregarImagem(logoId),
-      Promise.all(usados.map(itemDoMotor)), ...fontes.map(carregarFonte)]);
+    const loja = lojas.find((l) => l.id === c.loja_id);
+    const [fundo, logo, itens, rodape] = await Promise.all([carregarImagem(c.tema.fundo_id), carregarImagem(loja?.logo_asset_id),
+      Promise.all(usados.map(itemDoMotor)),
+      rodapeDoMotor(c.tema.rodape ?? rodapePadrao(kitApi), { de: c.validade_de, ate: c.validade_ate, loja: loja?.nome, lojaTexto: loja?.rodape_texto }),
+      ...fontes.map(carregarFonte)]);
     const ctx = canvas.getContext('2d') as unknown as Ctx2D;
     ctx.save(); (ctx as any).setTransform(1, 0, 0, 1, 0, 0);
-    desenharEncarte(ctx, { formato: ENCARTE_VERTICAL, grade, estilo: ESTILOS[c.tema.estilo], kit, itens, fundo: fundo as any, logo: logo as any, politica: c.tema.politica }, escala);
+    desenharEncarte(ctx, { formato: ENCARTE_VERTICAL, grade, estilo: ESTILOS[c.tema.estilo], kit, itens, fundo: fundo as any, logo: logo as any, politica: c.tema.politica, rodape }, escala);
     ctx.restore();
   }, [kitApi, lojas]);
   useEffect(() => {
@@ -167,6 +173,17 @@ export function Editor() {
             </div>
           )}
 
+          {!operador && (
+            <div className="abas" role="tablist">
+              <button role="tab" aria-selected={aba === 'produtos'} className={aba === 'produtos' ? 'ativa' : ''} onClick={() => setAba('produtos')}>Produtos</button>
+              <button role="tab" aria-selected={aba === 'rodape'} className={aba === 'rodape' ? 'ativa' : ''} onClick={() => setAba('rodape')}>Rodapé</button>
+            </div>
+          )}
+          {aba === 'rodape' && !operador && <PainelRodape rodape={camp.tema.rodape ?? rodapePadrao(kitApi)} personagens={personagens}
+            validade={{ de: camp.validade_de, ate: camp.validade_ate }} temLojaTexto={!!lojas.find((l) => l.id === camp.loja_id)?.rodape_texto}
+            aoMudar={(r) => mudarTema({ rodape: r })} aoValidade={(v) => mudar((c) => ({ ...c, validade_de: v.de, validade_ate: v.ate }))}
+            aoRestaurar={() => mudarTema({ rodape: undefined })} />}
+          {aba === 'produtos' && <>
           {sel !== null && camp.itens[sel] && <AjustesItem n={sel} item={camp.itens[sel]} selos={selos} aoFechar={() => setSel(null)}
             aoMudar={(campo, v) => mudarItem(sel, campo, v)} aoFoto={() => setFoto(sel)} />}
 
@@ -204,6 +221,7 @@ export function Editor() {
               </table>
             )}
           </div>
+          </>}
         </div>
 
         <div className="previa">
