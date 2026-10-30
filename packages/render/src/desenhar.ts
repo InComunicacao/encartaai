@@ -2,6 +2,7 @@ import { maiorQueCabe } from './autofit';
 import { alturaDigitos, desenharPreco, fonteCss, medirPreco, separarPreco } from './preco';
 import type { EstiloCaixa } from './estilos';
 import { desenharRodape, type Rodape } from './rodape';
+import { caixaCamada, type Camada } from './camadas';
 import { FATOR_POLITICA, type Combo, type Ctx2D, type Formato, type Fonte, type Grade, type Imagem, type Item, type Kit, type PoliticaTexto, type Retangulo } from './tipos';
 
 const ALTURA_LINHA = 1.05;                  // em corpos
@@ -248,6 +249,18 @@ export interface Encarte {
   logo?: Imagem | null;
   politica?: PoliticaTexto;
   rodape?: Rodape | null;
+  camadas?: Camada[];
+  logoAjuste?: { escala: number; dx: number; dy: number } | null;   // dx, dy em fração do formato
+}
+
+function desenharCamada(ctx: Ctx2D, c: Camada, f: Formato, g: Grade) {
+  if (!c.imagem || c.oculto) return;
+  const k = caixaCamada(c, f, g);
+  ctx.save();
+  ctx.translate(k.cx, k.cy);
+  if (k.rot) ctx.rotate((k.rot * Math.PI) / 180);
+  ctx.drawImage(c.imagem, -k.w / 2, -k.h / 2, k.w, k.h);
+  ctx.restore();
 }
 
 export function desenharEncarte(ctx: Ctx2D, e: Encarte, escala = 1): ResultadoCard[] {
@@ -256,7 +269,13 @@ export function desenharEncarte(ctx: Ctx2D, e: Encarte, escala = 1): ResultadoCa
   ctx.scale(escala, escala);
   if (e.fundo) desenharCobrindo(ctx, e.fundo, { x: 0, y: 0, w: f.w, h: f.h });
   else { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, f.w, f.h); }
-  if (e.logo) desenharContido(ctx, e.logo, px(f.logo, f));
+  // camada presa a um produto some com ele (fora da grade ou oculto)
+  const camadas = (e.camadas || []).filter((c) => c.ancora == null || (e.grade.celulas[c.ancora] && e.itens[c.ancora] && !e.itens[c.ancora].oculto));
+  for (const c of camadas) if (c.atras) desenharCamada(ctx, c, f, e.grade);
+  if (e.logo) {
+    const r = px(f.logo, f), a = e.logoAjuste, k = a?.escala ?? 1;
+    desenharContido(ctx, e.logo, { x: r.x + r.w * (1 - k) / 2 + (a?.dx ?? 0) * f.w, y: r.y + r.h * (1 - k) / 2 + (a?.dy ?? 0) * f.h, w: r.w * k, h: r.h * k });
+  }
 
   const res = e.grade.celulas.map((c, i) => e.itens[i] && !e.itens[i].oculto
     ? desenharCard(ctx, px(c, f), e.itens[i], e.kit, e.grade, e.estilo, e.politica)
@@ -265,6 +284,8 @@ export function desenharEncarte(ctx: Ctx2D, e: Encarte, escala = 1): ResultadoCa
   // rodapé: o da campanha (blocos, personagem, cores) ou, sem ele, o
   // texto do kit numa faixa simples
   desenharRodape(ctx, px(f.rodape, f), e.rodape ?? { blocos: [{ texto: e.kit.textos.rodape }] }, e.kit);
+  // frente de tudo: por cima dos produtos e do rodapé (personagens que "saem" da faixa)
+  for (const c of camadas) if (!c.atras) desenharCamada(ctx, c, f, e.grade);
 
   ctx.restore();
   return res;

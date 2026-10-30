@@ -8,9 +8,11 @@ import { useSessao } from '../App';
 import { Aviso, Modal } from '../componentes/Modal';
 import { carregarFonte, carregarImagem, itemDoMotor, kitDoCliente, lerLista, rodapeDoMotor, rodapePadrao, type ItemCampanha, type KitApi, type RodapeApi } from '../render-web';
 import { PainelRodape } from '../componentes/PainelRodape';
+import { EscolherImagem, PainelCamadas, novaCamada, type CamadaApi, type LogoApi } from '../componentes/PainelCamadas';
+import { Palco } from '../componentes/Palco';
 
 interface ItemEd extends ItemCampanha { candidatos?: { id: string; nome: string; foto_id: string | null; pontuacao: number }[] }
-interface Tema { grade: string; estilo: string; politica: PoliticaTexto; fundo_id: string | null; rodape?: RodapeApi }
+interface Tema { grade: string; estilo: string; politica: PoliticaTexto; fundo_id: string | null; rodape?: RodapeApi; camadas?: CamadaApi[]; logo?: LogoApi | null }
 interface Camp { id: string; nome: string; loja_id: string | null; validade_de: string | null; validade_ate: string | null; tema: Tema; itens: ItemEd[]; atualizado_em: number }
 interface Loja { id: string; nome: string; logo_asset_id: string | null; rodape_texto: string | null }
 
@@ -32,7 +34,11 @@ export function Editor() {
   const [sel, setSel] = useState<number | null>(null);
   const [selos, setSelos] = useState<Asset[]>([]);
   const [personagens, setPersonagens] = useState<Asset[]>([]);
-  const [aba, setAba] = useState<'produtos' | 'rodape'>('produtos');
+  const [aba, setAba] = useState<'produtos' | 'rodape' | 'camadas'>('produtos');
+  const [selCamada, setSelCamada] = useState<string | null>(null);
+  const [escolherImagem, setEscolherImagem] = useState<{ ancora: number | null; tipo: string } | null>(null);
+  const [proporcoes, setProporcoes] = useState<Record<string, number>>({});
+  const [nomes, setNomes] = useState<Record<string, string>>({});
   const [erro, setErro] = useState('');
   const versao = useRef(0);
   const sujo = useRef(false);
@@ -74,6 +80,53 @@ export function Editor() {
   const mudarItem = (i: number, campo: keyof ItemEd, v: unknown) => mudar((c) => ({ ...c, itens: c.itens.map((x, j) => j === i ? { ...x, [campo]: v } : x) }));
   const mudarTema = (t: Partial<Tema>) => mudar((c) => ({ ...c, tema: { ...c.tema, ...t } }));
 
+  // ── camadas ──
+  const camadas = camp?.tema.camadas || [];
+  const mudarCamadas = (cs: CamadaApi[]) => mudarTema({ camadas: cs });
+  const mudarCamada = (id: string, d: Partial<CamadaApi>) => mudarTema({ camadas: (camp?.tema.camadas || []).map((c) => c.id === id ? { ...c, ...d } : c) });
+  function adicionarImagem(a: Asset) {
+    setNomes((n) => ({ ...n, [a.id]: a.nome }));
+    const alvo = escolherImagem;
+    setEscolherImagem(null);
+    const c = alvo?.ancora != null ? novaCamada(a.id, { ancora: alvo.ancora, x: 0.68, y: 0.42, w: 0.5 }) : novaCamada(a.id);
+    mudarCamadas([...camadas, c]); setSelCamada(c.id);
+    if (alvo?.ancora == null) setAba('camadas');
+  }
+  // a segunda foto do produto: a mesma, presa ao card, ao lado da original
+  function duplicarFoto(i: number) {
+    const f = camp?.itens[i]?.foto_id; if (!f) return;
+    const c = novaCamada(f, { ancora: i, x: 0.68, y: 0.42, w: 0.5 });
+    mudarCamadas([...camadas, c]); setSelCamada(c.id);
+  }
+  function removerItem(i: number) {
+    setSel(null); setSelCamada(null);
+    mudar((c) => ({ ...c, itens: c.itens.filter((_, j) => j !== i), tema: { ...c.tema, camadas: (c.tema.camadas || [])
+      .filter((x) => x.ancora !== i).map((x) => x.ancora != null && x.ancora > i ? { ...x, ancora: x.ancora - 1 } : x) } }));
+  }
+  useEffect(() => {
+    if (!selCamada) return;
+    const tecla = (e: KeyboardEvent) => {
+      const alvo = e.target as HTMLElement;
+      if (alvo.closest('input,textarea,select,[contenteditable]')) return;
+      const passo = e.shiftKey ? 0.02 : 0.004;
+      const c = camadas.find((x) => x.id === selCamada); if (!c) return;
+      const d: Record<string, Partial<CamadaApi>> = { ArrowLeft: { x: c.x - passo }, ArrowRight: { x: c.x + passo }, ArrowUp: { y: c.y - passo }, ArrowDown: { y: c.y + passo } };
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); mudarCamadas(camadas.filter((x) => x.id !== selCamada)); setSelCamada(null); }
+      else if (d[e.key]) { e.preventDefault(); mudarCamada(selCamada, d[e.key]); }
+      else if (e.key === 'Escape') setSelCamada(null);
+    };
+    window.addEventListener('keydown', tecla);
+    return () => window.removeEventListener('keydown', tecla);
+  });
+  // nomes das imagens soltas (para a lista de camadas)
+  useEffect(() => {
+    const faltam = [...new Set(camadas.map((c) => c.asset_id))].filter((x) => !nomes[x]);
+    if (!faltam.length) return;
+    Promise.all(['selo', 'personagem', 'produto', 'tema', 'fundo', 'logo'].map((t) => api.get<{ assets: Asset[] }>('/assets?tipo=' + t + '&limite=500').catch(() => ({ assets: [] as Asset[] }))))
+      .then((rs) => setNomes((n) => ({ ...n, ...Object.fromEntries(rs.flatMap((r) => r.assets).map((a) => [a.id, a.nome])) })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camadas.length]);
+
   // ── colar lista ──
   async function aplicarLista(texto: string, substituir: boolean) {
     const linhas = lerLista(texto);
@@ -105,11 +158,17 @@ export function Editor() {
       Promise.all(usados.map(itemDoMotor)),
       rodapeDoMotor(c.tema.rodape ?? rodapePadrao(kitApi), { de: c.validade_de, ate: c.validade_ate, loja: loja?.nome, lojaTexto: loja?.rodape_texto }),
       ...fontes.map(carregarFonte)]);
+    const cams = c.tema.camadas || [];
+    const imgs = await Promise.all(cams.map((x) => carregarImagem(x.asset_id)));
+    const novas: Record<string, number> = {};
+    imgs.forEach((im, k) => { if (im && im.width && proporcoes[cams[k].asset_id] === undefined) novas[cams[k].asset_id] = im.height / im.width; });
+    if (Object.keys(novas).length) setProporcoes((x) => ({ ...x, ...novas }));
+    const camadas = cams.map((x, k) => ({ ...x, imagem: imgs[k] as any }));
     const ctx = canvas.getContext('2d') as unknown as Ctx2D;
     ctx.save(); (ctx as any).setTransform(1, 0, 0, 1, 0, 0);
-    desenharEncarte(ctx, { formato: ENCARTE_VERTICAL, grade, estilo: ESTILOS[c.tema.estilo], kit, itens, fundo: fundo as any, logo: logo as any, politica: c.tema.politica, rodape }, escala);
+    desenharEncarte(ctx, { formato: ENCARTE_VERTICAL, grade, estilo: ESTILOS[c.tema.estilo], kit, itens, fundo: fundo as any, logo: logo as any, politica: c.tema.politica, rodape, camadas, logoAjuste: c.tema.logo }, escala);
     ctx.restore();
-  }, [kitApi, lojas]);
+  }, [kitApi, lojas, proporcoes]);
   useEffect(() => {
     if (!camp || !tela.current) return;
     let vivo = true;
@@ -118,7 +177,7 @@ export function Editor() {
       const off = document.createElement('canvas'); off.width = cv.width; off.height = cv.height;
       await desenhar(off, camp, cv.width / ENCARTE_VERTICAL.w);
       if (vivo) cv.getContext('2d')!.drawImage(off, 0, 0);   // troca de uma vez: sem piscar
-    }, 120);
+    }, 16);
     return () => { vivo = false; clearTimeout(t); };
   }, [camp, desenhar]);
 
@@ -177,15 +236,22 @@ export function Editor() {
             <div className="abas" role="tablist">
               <button role="tab" aria-selected={aba === 'produtos'} className={aba === 'produtos' ? 'ativa' : ''} onClick={() => setAba('produtos')}>Produtos</button>
               <button role="tab" aria-selected={aba === 'rodape'} className={aba === 'rodape' ? 'ativa' : ''} onClick={() => setAba('rodape')}>Rodapé</button>
+              <button role="tab" aria-selected={aba === 'camadas'} className={aba === 'camadas' ? 'ativa' : ''} onClick={() => setAba('camadas')}>Camadas e logo</button>
             </div>
           )}
           {aba === 'rodape' && !operador && <PainelRodape rodape={camp.tema.rodape ?? rodapePadrao(kitApi)} personagens={personagens}
             validade={{ de: camp.validade_de, ate: camp.validade_ate }} temLojaTexto={!!lojas.find((l) => l.id === camp.loja_id)?.rodape_texto}
             aoMudar={(r) => mudarTema({ rodape: r })} aoValidade={(v) => mudar((c) => ({ ...c, validade_de: v.de, validade_ate: v.ate }))}
             aoRestaurar={() => mudarTema({ rodape: undefined })} />}
+          {aba === 'camadas' && !operador && <PainelCamadas camadas={camadas} logo={camp.tema.logo ?? null}
+            temLogo={!!lojas.find((l) => l.id === camp.loja_id)?.logo_asset_id} nomes={nomes}
+            nomeProduto={(i) => camp.itens[i]?.nome || ''} selecionada={selCamada} aoSelecionar={setSelCamada}
+            aoMudar={mudarCamadas} aoLogo={(l) => mudarTema({ logo: l })} aoAdicionar={() => setEscolherImagem({ ancora: null, tipo: 'selo' })} />}
           {aba === 'produtos' && <>
           {sel !== null && camp.itens[sel] && <AjustesItem n={sel} item={camp.itens[sel]} selos={selos} aoFechar={() => setSel(null)}
-            aoMudar={(campo, v) => mudarItem(sel, campo, v)} aoFoto={() => setFoto(sel)} />}
+            aoMudar={(campo, v) => mudarItem(sel, campo, v)} aoFoto={() => setFoto(sel)}
+            aoDuplicarFoto={() => duplicarFoto(sel)} aoOutraFoto={() => setEscolherImagem({ ancora: sel, tipo: 'produto' })}
+            extras={camadas.filter((c) => c.ancora === sel).length} />}
 
           <div className="cartao" style={{ padding: 0 }}>
             <div className="linha" style={{ padding: '12px 14px' }}>
@@ -215,7 +281,7 @@ export function Editor() {
                       <button className="discreto" aria-label="Ajustar" title="Ajustar foto, tamanhos e preço" onClick={() => setSel(i)}>⚙</button>
                       <button className="discreto" aria-label={it.oculto ? 'Mostrar' : 'Ocultar'} title={it.oculto ? 'Mostrar no encarte' : 'Ocultar do encarte (sem apagar)'}
                         onClick={() => mudarItem(i, 'oculto', !it.oculto)}>{it.oculto ? '🚫' : '👁'}</button>
-                      <button className="discreto perigo" aria-label="Remover" onClick={() => { setSel(null); mudar((c) => ({ ...c, itens: c.itens.filter((_, j) => j !== i) })); }}>×</button></td>
+                      <button className="discreto perigo" aria-label="Remover" onClick={() => removerItem(i)}>×</button></td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -225,10 +291,20 @@ export function Editor() {
         </div>
 
         <div className="previa">
-          <canvas ref={tela} width={540} height={960} aria-label="Prévia do encarte" />
+          <Palco grade={GRADES[camp.tema.grade]} camadas={camadas} proporcao={(a) => proporcoes[a] ?? 1}
+            itemVisivel={(i) => !!camp.itens[i] && !camp.itens[i].oculto} fotoAjuste={(i) => camp.itens[i]?.foto_ajuste || { dx: 0, dy: 0, escala: 1 }}
+            selCamada={selCamada} selItem={aba === 'produtos' ? sel : null} editavel={!operador}
+            aoSelCamada={(id) => { setSelCamada(id); if (id && camadas.find((c) => c.id === id)?.ancora == null) setAba('camadas'); }}
+            aoSelItem={(i) => { setSel(i); if (i != null) setAba('produtos'); }}
+            aoMudarCamada={mudarCamada}
+            aoMoverFoto={(i, dx, dy) => mudarItem(i, 'foto_ajuste', { ...(camp.itens[i].foto_ajuste || { escala: 1 }), dx, dy })}>
+            <canvas ref={tela} width={1080} height={1920} aria-label="Prévia do encarte" />
+          </Palco>
         </div>
       </div>
 
+      {escolherImagem && <EscolherImagem titulo={escolherImagem.ancora != null ? 'Outra foto no produto ' + (escolherImagem.ancora + 1) : 'Imagem solta'}
+        tipoInicial={escolherImagem.tipo} aoFechar={() => setEscolherImagem(null)} aoEscolher={adicionarImagem} />}
       {colar && <ColarLista aoFechar={() => setColar(false)} aoAplicar={aplicarLista} temItens={camp.itens.length > 0} />}
       {foto !== null && <EscolherFoto item={camp.itens[foto]} podeEnviar={!operador} aoFechar={() => setFoto(null)}
         aoEscolher={(a, produtoId) => { mudar((c) => ({ ...c, itens: c.itens.map((x, j) => j === foto ? { ...x, foto_id: a ? a.id : null,
@@ -304,8 +380,8 @@ function EscolherFoto({ item, podeEnviar, aoFechar, aoEscolher }: { item: ItemEd
 }
 
 // Ajustes de um produto: foto, tamanhos, tipo de preço, selo.
-function AjustesItem({ n, item, selos, aoFechar, aoMudar, aoFoto }: { n: number; item: ItemEd; selos: Asset[]; aoFechar: () => void;
-  aoMudar: (campo: keyof ItemEd, v: unknown) => void; aoFoto: () => void }) {
+function AjustesItem({ n, item, selos, aoFechar, aoMudar, aoFoto, aoDuplicarFoto, aoOutraFoto, extras }: { n: number; item: ItemEd; selos: Asset[]; aoFechar: () => void;
+  aoMudar: (campo: keyof ItemEd, v: unknown) => void; aoFoto: () => void; aoDuplicarFoto: () => void; aoOutraFoto: () => void; extras: number }) {
   const a = item.foto_ajuste || { dx: 0, dy: 0, escala: 1 };
   const ajustarFoto = (d: Partial<typeof a>) => aoMudar('foto_ajuste', { ...a, ...d });
   const passo = (campo: 'escala_nome' | 'escala_preco', d: number) =>
@@ -333,6 +409,11 @@ function AjustesItem({ n, item, selos, aoFechar, aoMudar, aoFoto }: { n: number;
             <button aria-label="Foto para a direita" onClick={() => ajustarFoto({ dx: +(a.dx + 0.03).toFixed(2) })}>→</button>
             <button className="discreto" onClick={() => aoMudar('foto_ajuste', null)}>Restaurar</button>
           </div>
+          <div className="linha" style={{ marginTop: 6 }}>
+            <button disabled={!item.foto_id} onClick={aoDuplicarFoto} title="Uma segunda embalagem igual, ao lado">⧉ Duplicar foto</button>
+            <button onClick={aoOutraFoto} title="Outra imagem presa a este produto">+ Outra foto</button>
+          </div>
+          {extras > 0 && <p className="sub" style={{ margin: '4px 0 0' }}>{extras} foto(s) extra: arraste no encarte; ficam em Camadas.</p>}
         </div>
         <div>
           <div className="rotulo">Tamanho do nome</div>

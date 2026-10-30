@@ -7,3 +7,4 @@ export * from './desenhar';
 export * from './padroes';
 export * from './video';
 export * from './rodape';
+export * from './camadas';

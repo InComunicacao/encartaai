@@ -197,3 +197,26 @@ button.ativo { background: var(--texto); color: #fff; border-color: var(--texto)
 .cores-rodape { display: flex; gap: 18px; flex-wrap: wrap; }
 .cor-rodape { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
 .cor-rodape input[type=color] { width: 44px; height: 32px; padding: 2px; margin: 0; }
+
+/* palco: edição direto no encarte */
+.palco { position: relative; touch-action: none; user-select: none; }
+.palco.editavel canvas { cursor: pointer; }
+.selecao { position: absolute; outline: 2px solid #2563eb; outline-offset: 1px; pointer-events: none; }
+.selecao .alca { position: absolute; width: 12px; height: 12px; background: #fff; border: 2px solid #2563eb; border-radius: 2px; pointer-events: auto; }
+.selecao .alca.no { left: -7px; top: -7px; cursor: nwse-resize; } .selecao .alca.ne { right: -7px; top: -7px; cursor: nesw-resize; }
+.selecao .alca.so { left: -7px; bottom: -7px; cursor: nesw-resize; } .selecao .alca.se { right: -7px; bottom: -7px; cursor: nwse-resize; }
+.selecao .girar { position: absolute; left: 50%; top: -30px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: #2563eb; pointer-events: auto; cursor: grab; }
+.selecao .girar::after { content: ''; position: absolute; left: 6px; top: 14px; width: 2px; height: 16px; background: #2563eb; }
+.selecao-produto { position: absolute; outline: 2px dashed var(--marca); pointer-events: none; border-radius: 4px; }
+.lista-camadas { list-style: none; margin: 0; padding: 0; }
+.lista-camadas li { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--linha); border-radius: 8px; margin-bottom: 6px; cursor: pointer; background: #fff; }
+.lista-camadas li.selecionada { border-color: #2563eb; background: #eff6ff; }
+.lista-camadas li.oculta { opacity: .5; }
+.lista-camadas img { width: 40px; height: 40px; object-fit: contain; background: repeating-conic-gradient(#f1f3f5 0% 25%, #fff 0% 50%) 50% / 10px 10px; border-radius: 4px; }
+.lista-camadas .nome { flex: 1; min-width: 0; font-size: 14px; display: flex; flex-direction: column; overflow: hidden; }
+.lista-camadas .nome small { color: var(--texto-2); font-size: 12px; }
+.lista-camadas .acoes { display: flex; } .lista-camadas .acoes button { padding: 4px 6px; }
+.bloco-logo .linha { margin-top: 6px; gap: 4px; } .bloco-logo button { min-width: 34px; }
+.painel-camadas .valor { min-width: 44px; text-align: center; }
+.ajuste-camada { border-top: 1px solid var(--linha); margin-top: 10px; padding-top: 10px; }
+.ajuste-camada .linha { gap: 6px; } .ajuste-camada button { min-width: 34px; }
